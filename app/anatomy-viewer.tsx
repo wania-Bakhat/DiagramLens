@@ -62,6 +62,9 @@ type PartVisual = {
 type LabelLayout = {
   x: number;
   y: number;
+  anchorX: number;
+  anchorY: number;
+  side: "left" | "right";
   visible: boolean;
 };
 
@@ -83,7 +86,8 @@ type ViewerCanvasProps = {
   explode: boolean;
   isLoading?: boolean;
   fullscreen?: boolean;
-  onSelectPart: (partId: string) => void;
+  resetToken: number;
+  onSelectPart: (partId: string | null) => void;
 };
 
 const palette = [
@@ -111,12 +115,29 @@ const referencePartAliases: Record<string, string[]> = {
   right_atrium: ["right-cardiac-atrium"],
   left_ventricle: ["heart-left-ventricle"],
   right_ventricle: ["heart-right-ventricle"],
+  superior_vena_cava: ["superior-vena-cava"],
+  inferior_vena_cava: ["inferior-vena-cava"],
+  pulmonary_artery: ["pulmonary-artery", "pulmonary-trunk"],
+  pulmonary_veins: ["pulmonary-vein"],
+  interventricular_septum: ["interventricular-septum"],
+  coronary_arteries: ["coronary-artery"],
   cerebrum: ["brain-hemisphere"],
+  frontal_lobe: ["frontal-lobe"],
+  parietal_lobe: ["parietal-lobe"],
+  temporal_lobe: ["temporal-lobe"],
+  occipital_lobe: ["occipital-lobe"],
   brainstem: ["pons", "medulla-oblongata", "midbrain"],
+  thalamus: ["thalamus"],
+  hypothalamus: ["hypothalamus"],
+  hippocampus: ["hippocampus"],
+  pituitary_gland: ["pituitary-gland"],
   amygdala: ["amygdaloid-complex"],
   medulla: ["medulla-oblongata"],
   left_lung: ["lungs-l"],
   right_lung: ["lungs-r"],
+  trachea: ["trachea"],
+  bronchi: ["main-bronchus", "bronchus"],
+  carina: ["carina"],
   left_upper_lobe: ["lungs-l-upper-lobe"],
   left_lower_lobe: ["lungs-l-lower-lobe"],
   right_upper_lobe: ["lungs-r-upper-lobe"],
@@ -188,6 +209,33 @@ function matchesSearch(part: VisionPart, searchTerm: string) {
     part.function,
     part.id
   ].some((field) => field.toLowerCase().includes(normalized));
+}
+
+function labelLayoutsChanged(
+  previous: Record<string, LabelLayout>,
+  next: Record<string, LabelLayout>
+) {
+  const previousIds = Object.keys(previous);
+  const nextIds = Object.keys(next);
+
+  if (previousIds.length !== nextIds.length) {
+    return true;
+  }
+
+  return nextIds.some((id) => {
+    const before = previous[id];
+    const after = next[id];
+
+    return (
+      !before ||
+      before.visible !== after.visible ||
+      before.side !== after.side ||
+      Math.abs(before.x - after.x) > 1.5 ||
+      Math.abs(before.y - after.y) > 1.5 ||
+      Math.abs(before.anchorX - after.anchorX) > 1.5 ||
+      Math.abs(before.anchorY - after.anchorY) > 1.5
+    );
+  });
 }
 
 function makePlacement(
@@ -1046,22 +1094,25 @@ function AnatomyViewer({
 }: AnatomyViewerProps) {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedPartId, setSelectedPartId] = useState<string | null>(
-    result.parts[0]?.id ?? null
-  );
+  const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [hiddenPartIds, setHiddenPartIds] = useState<Set<string>>(
     () => new Set()
   );
   const [explode, setExplode] = useState(false);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const [viewReset, setViewReset] = useState(0);
   const [tutorResponse, setTutorResponse] = useState<TutorResponse | null>(null);
   const [tutorLoading, setTutorLoading] = useState(false);
   const [tutorError, setTutorError] = useState<string | null>(null);
 
   useEffect(() => {
     setSearchTerm("");
-    setSelectedPartId(result.parts[0]?.id ?? null);
+    setSelectedPartId(null);
     setHiddenPartIds(new Set());
     setExplode(false);
+    setIsInfoOpen(false);
+    setIsTutorOpen(false);
   }, [result.organName, result.sourceFileName, result.parts.length]);
 
   useEffect(() => {
@@ -1072,7 +1123,7 @@ function AnatomyViewer({
   const activeOrgan = findAtlasOrgan(result.organSlug ?? result.organName);
   const atlasMetadata = result.atlasMetadata ?? getAtlasMetadata(activeOrgan);
   const selectedPart =
-    partInsights.find((part) => part.id === selectedPartId) ?? partInsights[0] ?? null;
+    partInsights.find((part) => part.id === selectedPartId) ?? null;
 
   useEffect(() => {
     if (!selectedPart) {
@@ -1153,15 +1204,219 @@ function AnatomyViewer({
     setHiddenPartIds(new Set(partInsights.map((part) => part.id)));
   }
 
+  function handleSelectPart(partId: string | null) {
+    setSelectedPartId(partId);
+    setIsInfoOpen(partId !== null);
+  }
+
+  function resetView() {
+    setViewReset((current) => current + 1);
+    handleSelectPart(null);
+  }
+
   const viewerShellClassName = fullscreen
-    ? "fixed inset-0 z-50 overflow-y-auto bg-[#02050b]/96 backdrop-blur-2xl"
-    : "";
+    ? "fixed inset-0 z-50 overflow-hidden bg-[#02050b]/96 backdrop-blur-2xl"
+    : "h-full min-h-0";
   const viewerCardClassName = fullscreen
     ? "flex min-h-[100dvh] w-full flex-col gap-4 p-3 md:p-5"
-    : "rounded-[2rem] border border-white/10 bg-white/[0.05] p-5 shadow-soft backdrop-blur-xl";
+    : "flex h-full min-h-0 flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-4 shadow-soft backdrop-blur-xl";
   const viewerSurfaceClassName = fullscreen
     ? "flex min-h-0 flex-1 flex-col rounded-[2rem] border border-white/10 bg-white/[0.05] p-5 shadow-soft backdrop-blur-xl"
-    : "";
+    : "flex min-h-0 flex-1 flex-col";
+
+  const immersiveTree = (
+    <section className="fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-[#030611] text-white lg:overflow-hidden">
+      <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-[minmax(280px,24vw)_minmax(0,1fr)]">
+        <aside className="relative flex max-h-[42dvh] min-h-0 flex-col border-b border-white/10 bg-[#070b17]/92 backdrop-blur-xl lg:max-h-none lg:border-b-0 lg:border-r">
+          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-4">
+            <div>
+              <p className="text-xs font-medium text-white/45">Study notes</p>
+              <p className="mt-1 text-sm font-semibold text-white">{result.organName}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onExitFullscreen}
+              className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/[0.07]"
+            >
+              Back to home
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {selectedPart && tutorContent ? (
+              <div className="space-y-4">
+                <section className="rounded-2xl border border-cyan-300/20 bg-cyan-500/[0.07] p-4">
+                  <p className="text-xs font-medium text-cyan-100/65">Selected structure</p>
+                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-white">
+                    {selectedPart.name}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-white/65">{selectedPart.description}</p>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-medium text-white/45">Explanation</p>
+                  <p className="mt-2 text-sm leading-6 text-white/75">{tutorContent.explanation}</p>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-medium text-white/45">Function</p>
+                  <p className="mt-2 text-sm leading-6 text-white/75">{tutorContent.function}</p>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-white/45">Related structures</p>
+                    <span className="text-xs text-white/35">{tutorContent.relatedStructures.length}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {tutorContent.relatedStructures.length ? (
+                      tutorContent.relatedStructures.map((relation) => (
+                        <button
+                          key={`${relation.id}-${relation.relation}`}
+                          type="button"
+                          onClick={() => handleSelectPart(relation.id)}
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-white/[0.06]"
+                        >
+                          <span className="block text-sm font-medium text-white">{relation.name}</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/45">{relation.relation}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-sm leading-6 text-white/45">No related structures are mapped yet.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-medium text-white/45">Quick question</p>
+                  <p className="mt-2 text-sm leading-6 text-white/75">{tutorContent.quizQuestions[0]}</p>
+                </section>
+              </div>
+            ) : (
+              <div className="flex min-h-full flex-col justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-5 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-500/10 text-lg text-cyan-100">
+                  +
+                </div>
+                <h2 className="mt-4 text-lg font-semibold text-white">Select a structure</h2>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  Click a label or a highlighted region to open its anatomy notes here.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-white/10 p-4">
+            <button
+              type="button"
+              onClick={() => setIsTutorOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-50"
+            >
+              Ask AI Tutor
+            </button>
+          </div>
+
+          {isTutorOpen ? (
+            <div className="absolute inset-0 z-20 flex flex-col bg-[#09111f] p-4 shadow-[20px_0_60px_rgba(0,0,0,0.34)]">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                  <p className="text-xs font-medium text-cyan-100/65">AI Tutor</p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {selectedPart ? selectedPart.name : result.organName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTutorOpen(false)}
+                  className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/[0.07]"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-5">
+                <p className="text-sm leading-7 text-white/65">
+                  Ask about the selected anatomy. The tutor is already using the current organ and structure as context.
+                </p>
+                <div className="mt-5 space-y-2">
+                  {(tutorContent?.quizQuestions ?? [
+                    `What should I notice first in the ${result.organName.toLowerCase()}?`,
+                    `How do the major structures of the ${result.organName.toLowerCase()} work together?`
+                  ]).map((question) => (
+                    <button
+                      key={question}
+                      type="button"
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left text-sm leading-6 text-white/80 transition hover:bg-white/[0.08]"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        <main className="flex h-[58dvh] min-h-0 min-w-0 flex-col bg-[radial-gradient(circle_at_75%_10%,rgba(56,189,248,0.12),transparent_24%),#040714] p-3 md:p-4 lg:h-auto">
+          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/55 p-2 backdrop-blur-xl">
+            <h1 className="px-2 text-base font-semibold tracking-[-0.02em] text-white md:text-lg">{result.organName}</h1>
+            <label className="relative min-w-[180px] flex-1">
+              <span className="sr-only">Search structures</span>
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-white/40"><SearchIcon /></span>
+              <input
+                value={searchTerm}
+                onChange={(event) => {
+                  const nextSearch = event.target.value;
+                  setSearchTerm(nextSearch);
+                  const match = partInsights.find((part) => matchesSearch(part, nextSearch));
+                  if (nextSearch.trim() && match) {
+                    handleSelectPart(match.id);
+                  }
+                }}
+                placeholder="Search parts"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/45"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setExplode((current) => !current)}
+              className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${
+                explode ? "border-cyan-300/35 bg-cyan-500/15 text-cyan-50" : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/[0.08]"
+              }`}
+            >
+              Explode
+            </button>
+            <button
+              type="button"
+              onClick={resetView}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-white/75 transition hover:bg-white/[0.08]"
+            >
+              Reset view
+            </button>
+            <button
+              type="button"
+              onClick={onExitFullscreen}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-white/75 transition hover:bg-white/[0.08]"
+            >
+              Exit
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1">
+            <ViewerCanvas
+              result={result}
+              searchTerm={searchTerm}
+              selectedPartId={selectedPartId}
+              hiddenPartIds={hiddenPartIds}
+              explode={explode}
+              isLoading={isLoading}
+              fullscreen
+              resetToken={viewReset}
+              onSelectPart={handleSelectPart}
+            />
+          </div>
+        </main>
+      </div>
+    </section>
+  );
 
   const viewerTree = (
     <section className={viewerShellClassName || undefined}>
@@ -1174,7 +1429,7 @@ function AnatomyViewer({
                   Full-screen study mode
                 </p>
                 <p className="mt-1 text-sm text-white/75">
-                  The uploaded diagram is now mapped into an immersive anatomy view.
+                  {result.organName} is open in an immersive anatomy study view.
                 </p>
               </div>
               <button
@@ -1269,7 +1524,7 @@ function AnatomyViewer({
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedPartId(result.parts[0]?.id ?? null)}
+                onClick={() => handleSelectPart(null)}
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-white/80 transition hover:-translate-y-0.5 hover:bg-white/[0.08]"
               >
                 Reset selection
@@ -1277,7 +1532,13 @@ function AnatomyViewer({
             </div>
           </div>
 
-          <div className={`mt-6 grid gap-5 ${fullscreen ? "xl:grid-cols-[minmax(0,1.18fr)_380px]" : "grid-cols-1"}`}>
+          <div className={`mt-5 grid min-h-0 flex-1 gap-5 overflow-y-auto xl:overflow-hidden ${
+            isInfoOpen && selectedPart
+              ? fullscreen
+                ? "xl:grid-cols-[minmax(0,1.18fr)_380px]"
+                : "xl:grid-cols-[minmax(0,1.18fr)_340px]"
+              : "grid-cols-1"
+          }`}>
             <ViewerCanvas
               result={result}
               searchTerm={searchTerm}
@@ -1286,10 +1547,19 @@ function AnatomyViewer({
               explode={explode}
               isLoading={isLoading}
               fullscreen={fullscreen}
-              onSelectPart={setSelectedPartId}
+              resetToken={viewReset}
+              onSelectPart={handleSelectPart}
             />
 
-            <aside className="space-y-4">
+            {isInfoOpen && selectedPart ? (
+            <aside className="min-h-0 space-y-4 overflow-y-auto pr-1">
+              <button
+                type="button"
+                onClick={() => setIsInfoOpen(false)}
+                className="ml-auto block rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/65 transition hover:bg-white/[0.08]"
+              >
+                Close details
+              </button>
               <section className="rounded-[1.8rem] border border-white/10 bg-[#040714] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1518,6 +1788,7 @@ function AnatomyViewer({
                 </div>
               </section>
             </aside>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1525,7 +1796,7 @@ function AnatomyViewer({
   );
 
   if (fullscreen && portalTarget) {
-    return createPortal(viewerTree, portalTarget);
+    return createPortal(immersiveTree, portalTarget);
   }
 
   return viewerTree;
@@ -1539,10 +1810,12 @@ function ViewerCanvas({
   explode,
   isLoading = false,
   fullscreen = false,
+  resetToken,
   onSelectPart
 }: ViewerCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [labelLayouts, setLabelLayouts] = useState<Record<string, LabelLayout>>({});
+  const labelLayoutsRef = useRef<Record<string, LabelLayout>>({});
   const [referenceModelState, setReferenceModelState] =
     useState<ReferenceModelState>(() =>
       result.atlasMetadata?.referenceAssetUrl ? "loading" : "fallback"
@@ -1576,6 +1849,7 @@ function ViewerCanvas({
     }
     const viewport = container;
 
+    labelLayoutsRef.current = {};
     setLabelLayouts({});
 
     const scene = new THREE.Scene();
@@ -1690,7 +1964,9 @@ function ViewerCanvas({
     if (referenceAssetUrls.length > 0) {
       const loader = new GLTFLoader();
       loader.setCrossOrigin("anonymous");
-      void Promise.all(referenceAssetUrls.map((url) => loader.loadAsync(url)))
+      const loadReference = (url: string) =>
+        (loader as GLTFLoader & { loadAsync: (assetUrl: string) => Promise<any> }).loadAsync(url);
+      void Promise.all(referenceAssetUrls.map(loadReference))
         .then((gltfs) => {
           if (disposed) {
             for (const gltf of gltfs) {
@@ -1776,6 +2052,8 @@ function ViewerCanvas({
       if (hit) {
         const partId = String(hit.object.userData.partId);
         onSelectPart(partId);
+      } else {
+        onSelectPart(null);
       }
     };
 
@@ -1810,7 +2088,7 @@ function ViewerCanvas({
     }
 
     function updateLabels() {
-      if (performance.now() - lastLabelUpdate < 40) {
+      if (performance.now() - lastLabelUpdate < 80) {
         return;
       }
 
@@ -1820,9 +2098,19 @@ function ViewerCanvas({
 
       if (referenceModelPending) {
         for (const visual of visuals) {
-          nextLayouts[visual.part.id] = { x: 0, y: 0, visible: false };
+          nextLayouts[visual.part.id] = {
+            x: 0,
+            y: 0,
+            anchorX: 0,
+            anchorY: 0,
+            side: "left",
+            visible: false
+          };
         }
-        setLabelLayouts(nextLayouts);
+        if (labelLayoutsChanged(labelLayoutsRef.current, nextLayouts)) {
+          labelLayoutsRef.current = nextLayouts;
+          setLabelLayouts(nextLayouts);
+        }
         lastLabelUpdate = performance.now();
         return;
       }
@@ -1831,6 +2119,8 @@ function ViewerCanvas({
         partId: string;
         x: number;
         y: number;
+        anchorX: number;
+        anchorY: number;
         side: "left" | "right";
       }> = [];
 
@@ -1843,17 +2133,15 @@ function ViewerCanvas({
           nextLayouts[visual.part.id] = {
             x: 0,
             y: 0,
+            anchorX: 0,
+            anchorY: 0,
+            side: "left",
             visible: false
           };
           continue;
         }
 
         const referenceAnchor = referenceAnchors.get(visual.part.id);
-        if (referenceModelLoaded && !referenceAnchor) {
-          nextLayouts[visual.part.id] = { x: 0, y: 0, visible: false };
-          continue;
-        }
-
         (referenceAnchor ?? visual.object).getWorldPosition(tempCameraSpace);
         tempLabelOffset
           .copy(referenceAnchor ? new THREE.Vector3(0, 0.28, 0) : visual.placement.labelOffset)
@@ -1870,15 +2158,25 @@ function ViewerCanvas({
           tempCameraSpace.y <= 1.05;
 
         if (!visible) {
-          nextLayouts[visual.part.id] = { x: 0, y: 0, visible: false };
+          nextLayouts[visual.part.id] = {
+            x: 0,
+            y: 0,
+            anchorX: 0,
+            anchorY: 0,
+            side: "left",
+            visible: false
+          };
           continue;
         }
 
         const x = ((tempCameraSpace.x + 1) * 0.5) * viewport.clientWidth;
+        const y = ((1 - tempCameraSpace.y) * 0.5) * viewport.clientHeight;
         projectedLabels.push({
           partId: visual.part.id,
           x,
-          y: ((1 - tempCameraSpace.y) * 0.5) * viewport.clientHeight,
+          y,
+          anchorX: x,
+          anchorY: y,
           side: x < viewport.clientWidth / 2 ? "left" : "right"
         });
       }
@@ -1890,21 +2188,65 @@ function ViewerCanvas({
         const sideLabels = projectedLabels
           .filter((label) => label.side === side)
           .sort((a, b) => a.y - b.y);
-        let previousY = 92;
+        const top = 96;
+        const bottom = Math.max(top, viewport.clientHeight - 70);
+        const distance = camera.position.distanceTo(controls.target);
+        const zoomLabelFactor = THREE.MathUtils.clamp(1.45 - distance / 9, 0.42, 1);
+        const maxLabels = Math.max(
+          3,
+          Math.floor(((bottom - top) / 42 + 1) * zoomLabelFactor)
+        );
+        const displayLabels =
+          sideLabels.length > maxLabels
+            ? [...sideLabels]
+                .sort((a, b) => {
+                  const aPriority = a.partId === state.selectedPartId ? -1 : 0;
+                  const bPriority = b.partId === state.selectedPartId ? -1 : 0;
+                  return (
+                    aPriority - bPriority ||
+                    Math.abs(a.y - viewport.clientHeight / 2) -
+                      Math.abs(b.y - viewport.clientHeight / 2)
+                  );
+                })
+                .slice(0, maxLabels)
+                .sort((a, b) => a.y - b.y)
+            : sideLabels;
+        const gap = Math.min(
+          46,
+          Math.max(25, (bottom - top) / Math.max(displayLabels.length - 1, 1))
+        );
+        const labelYs = displayLabels.map((label) =>
+          Math.max(top, Math.min(bottom, label.y))
+        );
 
-        for (const label of sideLabels) {
-          const y = Math.max(92, Math.min(viewport.clientHeight - 64, label.y));
-          const spacedY = Math.max(y, previousY + 44);
-          previousY = Math.min(viewport.clientHeight - 64, spacedY);
+        for (let index = 1; index < labelYs.length; index += 1) {
+          labelYs[index] = Math.max(labelYs[index], labelYs[index - 1] + gap);
+        }
+
+        const overflow = Math.max(0, (labelYs.at(-1) ?? top) - bottom);
+        if (overflow > 0) {
+          for (let index = 0; index < labelYs.length; index += 1) {
+            labelYs[index] -= overflow;
+          }
+        }
+
+        const railX = side === "left" ? 100 : viewport.clientWidth - 100;
+        for (const [index, label] of displayLabels.entries()) {
           nextLayouts[label.partId] = {
-            x: side === "left" ? 100 : viewport.clientWidth - 100,
-            y: previousY,
+            x: railX,
+            y: labelYs[index],
+            anchorX: label.anchorX,
+            anchorY: label.anchorY,
+            side,
             visible: true
           };
         }
       }
 
-      setLabelLayouts(nextLayouts);
+      if (labelLayoutsChanged(labelLayoutsRef.current, nextLayouts)) {
+        labelLayoutsRef.current = nextLayouts;
+        setLabelLayouts(nextLayouts);
+      }
       lastLabelUpdate = performance.now();
     }
 
@@ -1985,7 +2327,7 @@ function ViewerCanvas({
       disposeObject3D(scene);
       viewport.removeChild(renderer.domElement);
     };
-  }, [result, onSelectPart]);
+  }, [result, onSelectPart, resetToken]);
 
   const visibleLabels = result.parts.filter(
     (part) => !hiddenPartIds.has(part.id) && matchesSearch(part, searchTerm)
@@ -1994,7 +2336,7 @@ function ViewerCanvas({
   return (
     <div
       className={`relative w-full overflow-hidden rounded-[1.8rem] border border-white/10 bg-[#040714] ${
-        fullscreen ? "min-h-[720px]" : "min-h-[560px]"
+        fullscreen ? "min-h-0 h-full" : "min-h-[480px] xl:min-h-0 xl:h-full"
       }`}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.15),transparent_36%),radial-gradient(circle_at_70%_20%,rgba(251,113,133,0.14),transparent_28%),linear-gradient(180deg,rgba(2,6,23,0.95),rgba(3,7,18,0.98))]" />
@@ -2047,6 +2389,31 @@ function ViewerCanvas({
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-10">
+        <svg
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full overflow-visible"
+        >
+          {visibleLabels.map((part) => {
+            const layout = labelLayouts[part.id];
+
+            if (!layout?.visible) {
+              return null;
+            }
+
+            return (
+              <path
+                key={`leader-${part.id}`}
+                d={`M ${layout.anchorX} ${layout.anchorY} L ${
+                  layout.side === "left" ? layout.x + 42 : layout.x - 42
+                } ${layout.y}`}
+                fill="none"
+                stroke={partColor(part.id, result)}
+                strokeOpacity="0.58"
+                strokeWidth="1.2"
+              />
+            );
+          })}
+        </svg>
         {visibleLabels.map((part) => {
           const layout = labelLayouts[part.id];
           const selected = selectedPartId === part.id;
@@ -2060,7 +2427,7 @@ function ViewerCanvas({
               key={part.id}
               type="button"
               onClick={() => onSelectPart(part.id)}
-              className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] backdrop-blur transition hover:scale-[1.03] ${
+              className={`pointer-events-auto absolute max-w-[calc(50%-7rem)] -translate-x-1/2 -translate-y-1/2 truncate rounded-full border px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] backdrop-blur transition-[left,top,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] ${
                 selected
                   ? "border-cyan-300/45 bg-cyan-500/18 text-white shadow-[0_0_24px_rgba(56,189,248,0.2)]"
                   : "border-white/10 bg-slate-950/66 text-white/80 hover:bg-white/[0.08]"

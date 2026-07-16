@@ -23,19 +23,19 @@ const howItWorks = [
     index: "01",
     title: "Browse or upload",
     detail:
-      "Pick one of the atlas cards or upload a textbook image. Both routes feed the same anatomy viewer shell."
+      "Choose a reference organ or upload a medical diagram to begin an immersive study session."
   },
   {
     index: "02",
     title: "Map the labels",
     detail:
-      "The mock vision adapter returns structured organ JSON with parts, relationships, and model metadata."
+      "Explore connected structures, functions, and relationships without losing sight of the model."
   },
   {
     index: "03",
     title: "Study in 3D",
     detail:
-      "Click labels, rotate the model, toggle layers, and read grounded tutor notes that can later switch to a real LLM."
+      "Rotate the anatomy, select a structure, and use guided notes to reinforce what you see."
   }
 ];
 
@@ -402,6 +402,7 @@ export default function Home() {
       setViewMode("atlas");
       setError(null);
     });
+    setIsViewerOpen(true);
   }
 
   function acceptFile(file: File | undefined) {
@@ -517,18 +518,16 @@ export default function Home() {
         <section className="mt-16 max-w-5xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium uppercase tracking-[0.3em] text-white/60 backdrop-blur">
             <SparkIcon />
-            Mock vision adapter and tutor
+            Interactive 3D anatomy atlas
           </div>
 
           <div className="mt-8 space-y-6">
             <h1 className="max-w-5xl font-display text-5xl font-semibold leading-[0.92] tracking-[-0.05em] text-balance text-white md:text-6xl xl:text-7xl">
-              Turn textbook anatomy into a living study atlas.
+              DiagramLens — Interactive Human Anatomy Atlas.
             </h1>
             <p className="max-w-2xl text-lg leading-8 text-white/[0.72] md:text-xl">
-              Choose an organ card or upload a textbook diagram. DiagramLens
-              returns structured anatomy JSON, opens a clean 3D study view, and
-              surfaces grounded tutor notes that are ready to swap to a real LLM
-              later.
+              Explore human anatomy in 3D, upload medical diagrams, study each
+              connected structure, and learn through guided questions.
             </p>
             <p className="max-w-2xl text-sm uppercase tracking-[0.28em] text-white/[0.45]">
               Current study focus: {currentOrgan.studyFocus}
@@ -693,7 +692,7 @@ export default function Home() {
                         : "border-cyan-300/30 bg-cyan-500/10 text-cyan-50 hover:bg-cyan-500/15"
                     }`}
                   >
-                    {isViewerOpen ? "Exit full screen" : "Open full screen"}
+                    {isViewerOpen ? "Study mode open" : "Open study mode"}
                   </button>
                 </div>
 
@@ -732,34 +731,37 @@ export default function Home() {
           </div>
 
           <div id="result">
-            {isViewerOpen ? (
-              <div className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-5 shadow-soft backdrop-blur-xl">
-                <p className="text-xs uppercase tracking-[0.32em] text-white/[0.45]">
-                  Immersive mode
+            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_72%_20%,rgba(56,189,248,0.2),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.94),rgba(4,7,20,0.9))] p-6 shadow-soft">
+              <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full border border-white/10 bg-cyan-300/5 blur-2xl" />
+              <div className="relative max-w-md">
+                <p className="text-xs uppercase tracking-[0.3em] text-cyan-100/65">
+                  Ready to explore
                 </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">
-                  Full-screen study mode is open
+                <h3 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white">
+                  Study the {currentOrgan.organName.toLowerCase()} in 3D.
                 </h3>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-white/[0.65]">
-                  {viewMode === "upload"
-                    ? "The uploaded diagram is being studied in full screen. Press Escape or use the close button to return to the inline preview."
-                    : `You are studying ${currentOrgan.organName} in full screen. Press Escape or use the close button to return to the inline preview.`}
+                <p className="mt-3 text-sm leading-7 text-white/[0.64]">
+                  Enter an uncluttered study view with interactive labels,
+                  layered anatomy, and guided notes beside the model.
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/55">
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2">
-                    {currentOrgan.model.assetLabel}
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2">
-                    {currentOrgan.parts.length} labels
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2">
-                    {currentOrgan.model.statusLabel}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsViewerOpen(true)}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
+                >
+                  Begin 3D study
+                  <ArrowIcon />
+                </button>
               </div>
-            ) : (
-              <AnatomyViewer result={currentResult} isLoading={isExtracting} />
-            )}
+              <div className="relative mt-7 flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-[0.22em] text-white/55">
+                <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2">
+                  {currentOrgan.parts.length} structures
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2">
+                  {currentOrgan.model.assetLabel}
+                </span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -769,12 +771,11 @@ export default function Home() {
               How it works
             </p>
             <h2 className="mt-2 font-display text-4xl font-semibold tracking-[-0.03em] text-white md:text-5xl">
-              Small adapter today, real model later.
+              Start broad, then focus in.
             </h2>
             <p className="mt-3 max-w-xl text-white/[0.64]">
-              The page only depends on a simple extraction interface, so the
-              mock vision layer can later swap to a production model without
-              changing the rest of the experience.
+              Select an organ or add a diagram, then move into a dedicated 3D
+              study space without losing the context of what you chose.
             </p>
           </div>
 
@@ -787,8 +788,8 @@ export default function Home() {
 
         <footer className="mt-16 flex flex-col gap-4 border-t border-white/10 pt-6 text-sm text-white/[0.45] md:flex-row md:items-center md:justify-between">
           <p>
-            DiagramLens returns structured anatomy JSON, atlas metadata, and
-            tutor-ready study notes from a mock pipeline.
+            DiagramLens combines interactive anatomy models, structured labels,
+            and guided study notes.
           </p>
           <a
             className="inline-flex items-center gap-2 text-white/70 transition hover:text-white"

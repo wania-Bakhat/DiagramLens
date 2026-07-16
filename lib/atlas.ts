@@ -663,6 +663,190 @@ export const atlasLibrary: AtlasOrgan[] = [
   }
 ];
 
+function extendOrgan(
+  slug: string,
+  parts: VisionPart[],
+  relationships: VisionRelationship[]
+) {
+  const organ = atlasLibrary.find((entry) => entry.slug === slug);
+
+  if (!organ) {
+    return;
+  }
+
+  const knownPartIds = new Set(organ.parts.map((part) => part.id));
+  organ.parts.push(...parts.filter((part) => !knownPartIds.has(part.id)));
+
+  const knownRelationships = new Set(
+    organ.relationships.map(
+      (relationship) =>
+        `${relationship.sourcePartId}:${relationship.relation}:${relationship.targetPartId}`
+    )
+  );
+  organ.relationships.push(
+    ...relationships.filter((relationship) => {
+      const key = `${relationship.sourcePartId}:${relationship.relation}:${relationship.targetPartId}`;
+      return !knownRelationships.has(key);
+    })
+  );
+}
+
+// The bundled HuBMAP meshes are intentionally concise. These expanded study
+// maps keep the viewer useful as an atlas: every important region gets a label
+// and a connected explanation, even when the source mesh groups it with a
+// neighbouring structure.
+extendOrgan(
+  "heart",
+  [
+    { id: "superior_vena_cava", name: "Superior vena cava", description: "Large vein entering the right atrium from above.", function: "Returns oxygen-poor blood from the head and upper body." },
+    { id: "inferior_vena_cava", name: "Inferior vena cava", description: "Large vein entering the right atrium from below.", function: "Returns oxygen-poor blood from the lower body." },
+    { id: "pulmonary_artery", name: "Pulmonary artery", description: "Artery leaving the right ventricle for the lungs.", function: "Carries oxygen-poor blood to the lungs for gas exchange." },
+    { id: "pulmonary_veins", name: "Pulmonary veins", description: "Veins returning from the lungs to the left atrium.", function: "Bring oxygen-rich blood back to the heart." },
+    { id: "interventricular_septum", name: "Interventricular septum", description: "Muscular wall separating the two ventricles.", function: "Keeps oxygen-rich and oxygen-poor blood pathways separate." },
+    { id: "coronary_arteries", name: "Coronary arteries", description: "Vessels running over the heart surface.", function: "Supply the myocardium with oxygen-rich blood." }
+  ],
+  [
+    { sourcePartId: "superior_vena_cava", targetPartId: "right_atrium", relation: "drains into" },
+    { sourcePartId: "inferior_vena_cava", targetPartId: "right_atrium", relation: "drains into" },
+    { sourcePartId: "right_ventricle", targetPartId: "pulmonary_artery", relation: "ejects blood into" },
+    { sourcePartId: "pulmonary_veins", targetPartId: "left_atrium", relation: "return blood to" },
+    { sourcePartId: "coronary_arteries", targetPartId: "myocardium", relation: "supply" },
+    { sourcePartId: "interventricular_septum", targetPartId: "left_ventricle", relation: "separates from" }
+  ]
+);
+
+extendOrgan(
+  "brain",
+  [
+    { id: "frontal_lobe", name: "Frontal lobe", description: "Anterior cerebral region behind the forehead.", function: "Supports planning, voluntary movement, language production, and decision-making." },
+    { id: "parietal_lobe", name: "Parietal lobe", description: "Upper rear cerebral region.", function: "Integrates touch, spatial awareness, and sensory information." },
+    { id: "temporal_lobe", name: "Temporal lobe", description: "Side region near the temples.", function: "Helps process sound, language, and memory." },
+    { id: "occipital_lobe", name: "Occipital lobe", description: "Posterior region of the cerebrum.", function: "Processes visual information." },
+    { id: "thalamus", name: "Thalamus", description: "Deep relay structure near the center of the brain.", function: "Routes most sensory signals to the cerebral cortex." },
+    { id: "hypothalamus", name: "Hypothalamus", description: "Small region beneath the thalamus.", function: "Regulates temperature, hunger, hormones, and autonomic balance." },
+    { id: "hippocampus", name: "Hippocampus", description: "Curved structure deep in the temporal lobe.", function: "Helps form and retrieve new memories." },
+    { id: "pituitary_gland", name: "Pituitary gland", description: "Pea-sized gland suspended below the brain.", function: "Releases hormones that coordinate several endocrine glands." }
+  ],
+  [
+    { sourcePartId: "frontal_lobe", targetPartId: "cerebrum", relation: "forms the anterior region of" },
+    { sourcePartId: "parietal_lobe", targetPartId: "cerebrum", relation: "forms the upper region of" },
+    { sourcePartId: "temporal_lobe", targetPartId: "cerebrum", relation: "forms the lateral region of" },
+    { sourcePartId: "occipital_lobe", targetPartId: "cerebrum", relation: "forms the posterior region of" },
+    { sourcePartId: "thalamus", targetPartId: "cerebrum", relation: "relays sensory signals to" },
+    { sourcePartId: "hypothalamus", targetPartId: "pituitary_gland", relation: "regulates" },
+    { sourcePartId: "hippocampus", targetPartId: "temporal_lobe", relation: "sits within" }
+  ]
+);
+
+extendOrgan(
+  "lungs",
+  [
+    { id: "carina", name: "Carina", description: "Ridge where the trachea divides into the main bronchi.", function: "Directs airflow into the left and right bronchial trees." },
+    { id: "alveoli", name: "Alveoli", description: "Microscopic air sacs at the ends of bronchioles.", function: "Exchange oxygen and carbon dioxide with nearby capillaries." },
+    { id: "diaphragm", name: "Diaphragm", description: "Dome-shaped muscle below the lungs.", function: "Drives inhalation by expanding the chest cavity." }
+  ],
+  [
+    { sourcePartId: "trachea", targetPartId: "carina", relation: "ends at" },
+    { sourcePartId: "carina", targetPartId: "bronchi", relation: "divides into" },
+    { sourcePartId: "bronchi", targetPartId: "alveoli", relation: "branch toward" },
+    { sourcePartId: "diaphragm", targetPartId: "left_lung", relation: "supports expansion of" },
+    { sourcePartId: "diaphragm", targetPartId: "right_lung", relation: "supports expansion of" }
+  ]
+);
+
+extendOrgan(
+  "kidneys",
+  [
+    { id: "left_kidney", name: "Left kidney", description: "Left-sided kidney shown as part of the paired renal study.", function: "Filters blood and helps regulate fluid, electrolytes, and blood pressure." },
+    { id: "right_kidney", name: "Right kidney", description: "Right-sided kidney shown as part of the paired renal study.", function: "Filters blood and helps regulate fluid, electrolytes, and blood pressure." },
+    { id: "renal_vein", name: "Renal vein", description: "Vessel carrying filtered blood away from the kidney.", function: "Returns blood to the central circulation after renal processing." },
+    { id: "renal_pyramids", name: "Renal pyramids", description: "Triangular structures within the medulla.", function: "Concentrate urine and pass it toward the renal pelvis." }
+  ],
+  [
+    { sourcePartId: "left_kidney", targetPartId: "renal_cortex", relation: "contains" },
+    { sourcePartId: "right_kidney", targetPartId: "renal_cortex", relation: "contains" },
+    { sourcePartId: "renal_artery", targetPartId: "renal_vein", relation: "returns through" },
+    { sourcePartId: "renal_medulla", targetPartId: "renal_pyramids", relation: "contains" },
+    { sourcePartId: "renal_pyramids", targetPartId: "renal_pelvis", relation: "drain into" }
+  ]
+);
+
+extendOrgan(
+  "liver",
+  [
+    { id: "caudate_lobe", name: "Caudate lobe", description: "Small lobe on the posterior surface near the vena cava.", function: "Contributes to the liver's metabolic and blood-processing functions." },
+    { id: "quadrate_lobe", name: "Quadrate lobe", description: "Small inferior lobe near the gallbladder.", function: "Forms part of the liver's functional tissue." },
+    { id: "hepatic_artery", name: "Hepatic artery", description: "Artery bringing oxygen-rich blood to the liver.", function: "Supplies the liver tissue with oxygen." },
+    { id: "hepatic_veins", name: "Hepatic veins", description: "Veins draining blood from the liver.", function: "Return processed blood to the inferior vena cava." },
+    { id: "common_bile_duct", name: "Common bile duct", description: "Duct carrying bile toward the small intestine.", function: "Delivers bile to help digest fats." },
+    { id: "falciform_ligament", name: "Falciform ligament", description: "Fold of tissue visible on the front of the liver.", function: "Anchors the liver to the anterior abdominal wall." }
+  ],
+  [
+    { sourcePartId: "hepatic_artery", targetPartId: "right_lobe", relation: "supplies" },
+    { sourcePartId: "hepatic_veins", targetPartId: "right_lobe", relation: "drain" },
+    { sourcePartId: "caudate_lobe", targetPartId: "right_lobe", relation: "lies beside" },
+    { sourcePartId: "quadrate_lobe", targetPartId: "gallbladder", relation: "lies beside" },
+    { sourcePartId: "hepatic_duct", targetPartId: "common_bile_duct", relation: "continues as" },
+    { sourcePartId: "falciform_ligament", targetPartId: "left_lobe", relation: "marks the surface of" }
+  ]
+);
+
+extendOrgan(
+  "eye",
+  [
+    { id: "pupil", name: "Pupil", description: "Dark central opening in the iris.", function: "Lets a controlled amount of light enter the eye." },
+    { id: "sclera", name: "Sclera", description: "Tough white outer coat of the eye.", function: "Protects the globe and gives eye muscles a firm attachment." },
+    { id: "aqueous_humor", name: "Aqueous humor", description: "Clear fluid in the front chambers of the eye.", function: "Nourishes the cornea and lens while maintaining eye pressure." },
+    { id: "vitreous_body", name: "Vitreous body", description: "Clear gel filling the large rear chamber.", function: "Helps the eye keep its shape and supports the retina." },
+    { id: "choroid", name: "Choroid", description: "Vascular layer between sclera and retina.", function: "Supplies the outer retina with oxygen and nutrients." }
+  ],
+  [
+    { sourcePartId: "iris", targetPartId: "pupil", relation: "surrounds" },
+    { sourcePartId: "cornea", targetPartId: "aqueous_humor", relation: "encloses" },
+    { sourcePartId: "lens", targetPartId: "vitreous_body", relation: "focuses light through" },
+    { sourcePartId: "choroid", targetPartId: "retina", relation: "nourishes" },
+    { sourcePartId: "sclera", targetPartId: "choroid", relation: "surrounds" }
+  ]
+);
+
+atlasLibrary.push({
+  slug: "pancreas",
+  organName: "Pancreas",
+  category: "metabolic",
+  aliases: ["pancreatic", "insulin", "digestive", "islets", "duodenum"],
+  summary: "A detailed pancreatic study showing its endocrine islands and the duct that delivers digestive enzymes.",
+  studyFocus: "Trace digestive secretions from the pancreatic head through the duct toward the duodenum.",
+  confidence: 0.95,
+  diagramTitle: "Endocrine and digestive roles",
+  diagramSubtitle: "Regions, duct pathway, and hormone-producing islands",
+  theme: { accent: "#fbbf24", glow: "rgba(251,191,36,0.25)", surface: "rgba(251,191,36,0.1)" },
+  model: {
+    assetLabel: "Human Reference Atlas pancreas",
+    assetFileName: "3d-vh-m-pancreas.glb",
+    referenceAssetUrl: `${humanReferenceAtlasAssetBase}/pancreas-male/v1.2/assets/3d-vh-m-pancreas.glb`,
+    referenceAttribution: humanReferenceAtlasAttribution,
+    loaderHint: "Loads the Human Reference Atlas pancreas GLB with a clear museum-style study presentation.",
+    scaleHint: "Low, elongated gland with the broad head on the duodenal side and a narrow tail toward the spleen.",
+    statusLabel: "Interactive 3D model"
+  },
+  parts: [
+    { id: "pancreatic_head", name: "Pancreatic head", description: "Broad right-side portion cradled by the duodenum.", function: "Contributes digestive enzymes and hormones." },
+    { id: "pancreatic_neck", name: "Pancreatic neck", description: "Short segment between the head and body.", function: "Connects the broad head to the central gland." },
+    { id: "pancreatic_body", name: "Pancreatic body", description: "Central elongated portion of the pancreas.", function: "Contains enzyme-producing and hormone-producing tissue." },
+    { id: "pancreatic_tail", name: "Pancreatic tail", description: "Tapered left end near the spleen.", function: "Contains a relatively high concentration of endocrine islets." },
+    { id: "pancreatic_duct", name: "Pancreatic duct", description: "Main channel through the gland.", function: "Carries digestive secretions toward the small intestine." },
+    { id: "islets_of_langerhans", name: "Islets of Langerhans", description: "Clusters of endocrine cells scattered through the pancreas.", function: "Release hormones including insulin and glucagon into the blood." },
+    { id: "duodenum", name: "Duodenum", description: "First segment of the small intestine beside the pancreatic head.", function: "Receives pancreatic enzymes to support digestion." }
+  ],
+  relationships: [
+    { sourcePartId: "pancreatic_head", targetPartId: "pancreatic_neck", relation: "continues into" },
+    { sourcePartId: "pancreatic_neck", targetPartId: "pancreatic_body", relation: "continues into" },
+    { sourcePartId: "pancreatic_body", targetPartId: "pancreatic_tail", relation: "continues into" },
+    { sourcePartId: "pancreatic_duct", targetPartId: "duodenum", relation: "delivers enzymes to" },
+    { sourcePartId: "islets_of_langerhans", targetPartId: "pancreatic_body", relation: "are distributed through" }
+  ]
+});
+
 export function findAtlasOrgan(identifier: string | null | undefined) {
   if (!identifier) {
     return atlasLibrary[0];
