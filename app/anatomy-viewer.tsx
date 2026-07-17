@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState
 } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -73,9 +75,6 @@ type ReferenceModelState = "loading" | "reference" | "fallback";
 type ReferenceMesh = {
   mesh: InstanceType<typeof THREE.Mesh>;
   partId: string | null;
-  material: any;
-  baseOpacity: number;
-  baseEmissiveIntensity: number;
 };
 
 type ViewerCanvasProps = {
@@ -106,10 +105,8 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-// The HuBMAP GLBs use their anatomical-source names (for example,
-// "left cardiac atrium") rather than the concise ids used by DiagramLens.
-// Keep that vocabulary bridge explicit so selected study labels highlight the
-// correct, real GLB mesh instead of a generic fallback shape.
+// Source GLBs use different anatomy vocabularies. Keep the bridge explicit so
+// study labels highlight a matching real mesh whenever that structure exists.
 const referencePartAliases: Record<string, string[]> = {
   left_atrium: ["left-cardiac-atrium"],
   right_atrium: ["right-cardiac-atrium"],
@@ -143,12 +140,13 @@ const referencePartAliases: Record<string, string[]> = {
   right_upper_lobe: ["lungs-r-upper-lobe"],
   right_middle_lobe: ["lungs-r-middle-lobe"],
   right_lower_lobe: ["lungs-r-lower-lobe"],
-  left_kidney: ["left-kidney"],
-  right_kidney: ["right-kidney"],
-  renal_cortex: ["cortex-of-kidney"],
-  renal_medulla: ["renal-medulla"],
-  renal_capsule: ["kidney-capsule"],
   renal_hilum: ["hilum-of-kidney"],
+  renal_cortex: ["cortex-of-kidney", "maya-2018-cortex", "cortex"],
+  renal_medulla: ["renal-medulla", "maya-2018-medulla-pyramid", "medulla-pyramid"],
+  renal_capsule: ["kidney-capsule", "maya-2018-capsule", "capsule"],
+  renal_artery: ["maya-2018-red", "renal-artery"],
+  renal_vein: ["maya-2018-blue", "renal-vein"],
+  ureter: ["maya-2018-ureter", "ureter"],
   optic_disc: ["optic-disc"]
 };
 
@@ -514,6 +512,22 @@ function buildKidneysPlacements(parts: VisionPart[]) {
       "vessel",
       new THREE.Euler(0.18, 0.02, 1.24)
     ),
+    renal_vein: makePlacement(
+      new THREE.Vector3(0.16, 0.72, -0.02),
+      new THREE.Vector3(0.34, 1.14, -0.08),
+      new THREE.Vector3(0.3, 0.36, -0.1),
+      new THREE.Vector3(0.32, 0.32, 0.32),
+      "vessel",
+      new THREE.Euler(-0.12, 0.04, 1.1)
+    ),
+    renal_capsule: makePlacement(
+      new THREE.Vector3(-0.48, 0.12, -0.08),
+      new THREE.Vector3(-0.92, 0.22, -0.18),
+      new THREE.Vector3(-0.42, -0.12, -0.2),
+      new THREE.Vector3(0.88, 1.08, 0.76),
+      "kidney-shell",
+      new THREE.Euler(0.04, -0.1, 0.06)
+    ),
     renal_cortex: makePlacement(
       new THREE.Vector3(-0.56, 0.16, 0.04),
       new THREE.Vector3(-1.04, 0.34, 0.08),
@@ -530,13 +544,13 @@ function buildKidneysPlacements(parts: VisionPart[]) {
       "renal-pyramid",
       new THREE.Euler(0.16, 0.24, 0.04)
     ),
-    renal_pelvis: makePlacement(
-      new THREE.Vector3(0.18, -0.42, 0.16),
-      new THREE.Vector3(0.36, -0.8, 0.26),
-      new THREE.Vector3(0.42, -0.24, 0.3),
-      new THREE.Vector3(0.38, 0.42, 0.34),
-      "renal-pelvis",
-      new THREE.Euler(0.14, 0.08, -0.04)
+    renal_pyramids: makePlacement(
+      new THREE.Vector3(0.34, -0.04, 0.1),
+      new THREE.Vector3(0.66, -0.1, 0.22),
+      new THREE.Vector3(0.48, 0.14, 0.2),
+      new THREE.Vector3(0.38, 0.6, 0.34),
+      "renal-pyramid",
+      new THREE.Euler(0.16, 0.24, 0.04)
     ),
     ureter: makePlacement(
       new THREE.Vector3(0.2, -0.92, 0.06),
@@ -987,36 +1001,6 @@ function buildRelationshipLines(
   });
 }
 
-function createBackdrop() {
-  const group = new THREE.Group();
-
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(2.25, 40, 28),
-    new THREE.MeshBasicMaterial({
-      color: "#1a2336",
-      transparent: true,
-      opacity: 0.045,
-      depthWrite: false,
-      side: THREE.BackSide
-    })
-  );
-  group.add(shell);
-
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(1.45, 28, 20),
-    new THREE.MeshBasicMaterial({
-      color: "#fb7185",
-      transparent: true,
-      opacity: 0.045,
-      depthWrite: false
-    })
-  );
-  glow.position.set(0, 0.05, -0.12);
-  group.add(glow);
-
-  return group;
-}
-
 function disposeObject3D(object: any) {
   object.traverse((child: any) => {
     const mesh = child as any;
@@ -1204,10 +1188,10 @@ function AnatomyViewer({
     setHiddenPartIds(new Set(partInsights.map((part) => part.id)));
   }
 
-  function handleSelectPart(partId: string | null) {
+  const handleSelectPart = useCallback((partId: string | null) => {
     setSelectedPartId(partId);
     setIsInfoOpen(partId !== null);
-  }
+  }, []);
 
   function resetView() {
     setViewReset((current) => current + 1);
@@ -1355,7 +1339,7 @@ function AnatomyViewer({
           ) : null}
         </aside>
 
-        <main className="flex h-[58dvh] min-h-0 min-w-0 flex-col bg-[radial-gradient(circle_at_75%_10%,rgba(56,189,248,0.12),transparent_24%),#040714] p-3 md:p-4 lg:h-auto">
+        <main className="flex h-[58dvh] min-h-0 min-w-0 flex-col bg-[#050816] p-3 md:p-4 lg:h-auto">
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/55 p-2 backdrop-blur-xl">
             <h1 className="px-2 text-base font-semibold tracking-[-0.02em] text-white md:text-lg">{result.organName}</h1>
             <label className="relative min-w-[180px] flex-1">
@@ -1460,9 +1444,6 @@ function AnatomyViewer({
                   {atlasMetadata.diagramTitle}
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2">
-                  {atlasMetadata.assetLabel}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2">
                   {atlasMetadata.statusLabel}
                 </span>
               </div>
@@ -1532,13 +1513,7 @@ function AnatomyViewer({
             </div>
           </div>
 
-          <div className={`mt-5 grid min-h-0 flex-1 gap-5 overflow-y-auto xl:overflow-hidden ${
-            isInfoOpen && selectedPart
-              ? fullscreen
-                ? "xl:grid-cols-[minmax(0,1.18fr)_380px]"
-                : "xl:grid-cols-[minmax(0,1.18fr)_340px]"
-              : "grid-cols-1"
-          }`}>
+          <div className="relative mt-5 min-h-0 flex-1">
             <ViewerCanvas
               result={result}
               searchTerm={searchTerm}
@@ -1551,8 +1526,15 @@ function AnatomyViewer({
               onSelectPart={handleSelectPart}
             />
 
+            <AnimatePresence initial={false}>
             {isInfoOpen && selectedPart ? (
-            <aside className="min-h-0 space-y-4 overflow-y-auto pr-1">
+            <motion.aside
+              initial={{ opacity: 0, x: 28, y: 8 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 20, y: 6 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28, mass: 0.8 }}
+              className={`relative z-20 mt-4 min-h-0 space-y-4 overflow-y-auto pr-1 xl:absolute xl:bottom-0 xl:right-0 xl:top-0 xl:mt-0 xl:rounded-[1.8rem] xl:border xl:border-white/10 xl:bg-[#070b17]/92 xl:p-4 xl:shadow-[-28px_18px_70px_rgba(0,0,0,0.32)] xl:backdrop-blur-xl ${fullscreen ? "xl:w-[380px]" : "xl:w-[340px]"}`}
+            >
               <button
                 type="button"
                 onClick={() => setIsInfoOpen(false)}
@@ -1747,7 +1729,7 @@ function AnatomyViewer({
                         >
                           <button
                             type="button"
-                            onClick={() => setSelectedPartId(part.id)}
+                          onClick={() => handleSelectPart(part.id)}
                             className="flex min-w-0 flex-1 items-center gap-3 text-left"
                           >
                             <span
@@ -1787,8 +1769,9 @@ function AnatomyViewer({
                   )}
                 </div>
               </section>
-            </aside>
+            </motion.aside>
             ) : null}
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -1854,7 +1837,6 @@ function ViewerCanvas({
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#050816");
-    scene.fog = new THREE.Fog("#050816", 8, 18);
 
     const camera = new THREE.PerspectiveCamera(
       46,
@@ -1872,8 +1854,10 @@ function ViewerCanvas({
     renderer.setSize(viewport.clientWidth, viewport.clientHeight);
     renderer.setClearColor("#050816");
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
+    // Preserve the source GLB's authored albedo rather than applying a
+    // cinematic remap that can desaturate or pink-wash medical textures.
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
     viewport.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1888,22 +1872,25 @@ function ViewerCanvas({
     const root = new THREE.Group();
     root.rotation.y = -0.42;
     scene.add(root);
-    root.add(createBackdrop());
     const referenceModelRoot = new THREE.Group();
     root.add(referenceModelRoot);
+    const modelWillLoad = Boolean(result.atlasMetadata?.referenceAssetUrl);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.55);
+    // Keep the environment dark while lighting the authored PBR materials with
+    // neutral white light. There is deliberately no coloured wash, bloom mesh,
+    // or post-processing tint applied to the supplied anatomy assets.
+    const ambient = new THREE.AmbientLight(0xffffff, modelWillLoad ? 0.01 : 0.46);
     scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
+    const keyLight = new THREE.DirectionalLight(0xffffff, modelWillLoad ? 0.01 : 1.6);
     keyLight.position.set(4.4, 6, 8);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x7dd3fc, 1.05);
+    const fillLight = new THREE.DirectionalLight(0xffffff, modelWillLoad ? 0.01 : 0.38);
     fillLight.position.set(-5, 2.4, 3.5);
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0xfb7185, 0.8);
+    const rimLight = new THREE.DirectionalLight(0xffffff, modelWillLoad ? 0.01 : 0.2);
     rimLight.position.set(0, -3, -5);
     scene.add(rimLight);
 
@@ -1944,6 +1931,7 @@ function ViewerCanvas({
         ? result.atlasMetadata.referenceAssetUrl
         : [result.atlasMetadata.referenceAssetUrl]
       : [];
+    const hasReferenceAssets = referenceAssetUrls.length > 0;
     const referenceAnchors = new Map<
       string,
       InstanceType<typeof THREE.Object3D>
@@ -1951,6 +1939,7 @@ function ViewerCanvas({
     const referenceMeshes: ReferenceMesh[] = [];
     let referenceModelLoaded = false;
     let referenceModelPending = referenceAssetUrls.length > 0;
+    let modelReveal = modelWillLoad ? 0 : 1;
     let disposed = false;
     const resizeObserver = new ResizeObserver(() => {
       const { clientWidth, clientHeight } = viewport;
@@ -1994,26 +1983,53 @@ function ViewerCanvas({
               referenceAnchors.set(part.id, candidate);
             }
 
-            const sourceMaterials = Array.isArray(candidate.material)
-              ? candidate.material
-              : [candidate.material];
-            const clonedMaterials = sourceMaterials.map((material: any) =>
-              material.clone()
-            );
-            candidate.material = Array.isArray(candidate.material)
-              ? clonedMaterials
-              : clonedMaterials[0];
-
-            for (const material of clonedMaterials) {
-              referenceMeshes.push({
-                mesh: candidate,
-                partId: part?.id ?? null,
-                material,
-                baseOpacity: material.opacity ?? 1,
-                baseEmissiveIntensity: material.emissiveIntensity ?? 0
-              });
-            }
+            // Leave every authored material and texture exactly as supplied by
+            // the GLB. The renderer may toggle whole meshes for an explicit
+            // hide action, but it never recolours, fades, or clones the model.
+            referenceMeshes.push({
+              mesh: candidate,
+              partId: part?.id ?? null
+            });
           });
+
+          // Many authored GLBs retain generic mesh names. For labels that
+          // cannot be name-matched, raycast from the study-map direction onto
+          // the actual model and retain that surface point as the leader's
+          // anchor. This keeps the callout attached to the rendered anatomy
+          // instead of leaving it at a floating fallback position.
+          assembledReferenceModel.updateMatrixWorld(true);
+          const modelBounds = new THREE.Box3().setFromObject(assembledReferenceModel);
+          const modelCenter = modelBounds.getCenter(new THREE.Vector3());
+          const modelSize = modelBounds.getSize(new THREE.Vector3());
+          const modelRadius = Math.max(modelSize.x, modelSize.y, modelSize.z, 0.01);
+          const anchorRaycaster = new THREE.Raycaster();
+
+          for (const visual of visuals) {
+            if (referenceAnchors.has(visual.part.id)) {
+              continue;
+            }
+
+            const direction = visual.placement.basePosition
+              .clone()
+              .sub(center)
+              .normalize();
+            if (direction.lengthSq() < 0.001) {
+              direction.set(0, 0.2, 1).normalize();
+            }
+
+            const origin = modelCenter.clone().addScaledVector(direction, modelRadius * 2.2);
+            anchorRaycaster.set(origin, direction.clone().negate());
+            const hit = anchorRaycaster.intersectObject(assembledReferenceModel, true)[0];
+            if (!hit) {
+              continue;
+            }
+
+            const anchor = new THREE.Object3D();
+            anchor.position.copy(hit.point);
+            anchor.userData.partId = visual.part.id;
+            referenceModelRoot.add(anchor);
+            referenceAnchors.set(visual.part.id, anchor);
+          }
 
           referenceModelRoot.add(assembledReferenceModel);
           clickableMeshes.push(assembledReferenceModel);
@@ -2072,7 +2088,7 @@ function ViewerCanvas({
         const sourceVisible = !state.hiddenPartIds.has(relation.source.part.id);
         const targetVisible = !state.hiddenPartIds.has(relation.target.part.id);
         relation.line.visible =
-          !referenceModelLoaded && sourceVisible && targetVisible;
+          !hasReferenceAssets && sourceVisible && targetVisible;
 
         const sourcePosition = relation.source.object.position;
         const targetPosition = relation.target.object.position;
@@ -2096,7 +2112,10 @@ function ViewerCanvas({
       const state = interactionRef.current;
       const currentSearchTerm = state.searchTerm.toLowerCase().trim();
 
-      if (referenceModelPending) {
+      // Atlas labels belong to the real model only. If its GLB is still
+      // loading or cannot load, keep callouts hidden rather than showing
+      // anchors from the synthetic study-map fallback.
+      if (hasReferenceAssets && !referenceModelLoaded) {
         for (const visual of visuals) {
           nextLayouts[visual.part.id] = {
             x: 0,
@@ -2144,7 +2163,7 @@ function ViewerCanvas({
         const referenceAnchor = referenceAnchors.get(visual.part.id);
         (referenceAnchor ?? visual.object).getWorldPosition(tempCameraSpace);
         tempLabelOffset
-          .copy(referenceAnchor ? new THREE.Vector3(0, 0.28, 0) : visual.placement.labelOffset)
+          .copy(referenceAnchor ? new THREE.Vector3() : visual.placement.labelOffset)
           .applyQuaternion(referenceAnchor ? new THREE.Quaternion() : root.quaternion);
         tempCameraSpace.add(tempLabelOffset);
         tempCameraSpace.project(camera);
@@ -2253,6 +2272,13 @@ function ViewerCanvas({
     function animate() {
       const state = interactionRef.current;
       explodeFactor = THREE.MathUtils.lerp(explodeFactor, state.explode ? 1 : 0, 0.08);
+      const revealTarget = referenceModelLoaded || !modelWillLoad ? 1 : 0;
+      modelReveal = THREE.MathUtils.lerp(modelReveal, revealTarget, 0.065);
+      referenceModelRoot.scale.setScalar(0.96 + modelReveal * 0.04);
+      ambient.intensity = 0.46 * modelReveal;
+      keyLight.intensity = 1.6 * modelReveal;
+      fillLight.intensity = 0.38 * modelReveal;
+      rimLight.intensity = 0.2 * modelReveal;
 
       for (const visual of visuals) {
         const hidden = state.hiddenPartIds.has(visual.part.id);
@@ -2261,7 +2287,7 @@ function ViewerCanvas({
         const targetOpacity = hidden ? 0.06 : searchMatch ? 0.96 : 0.26;
 
         visual.object.visible =
-          !referenceModelLoaded && !referenceModelPending && !hidden;
+          !hasReferenceAssets && !referenceModelPending && !hidden;
         visual.object.position.lerpVectors(
           visual.placement.basePosition,
           visual.placement.explodedPosition,
@@ -2281,30 +2307,7 @@ function ViewerCanvas({
           const hidden =
             referenceMesh.partId !== null &&
             state.hiddenPartIds.has(referenceMesh.partId);
-          const selected = referenceMesh.partId === state.selectedPartId;
-          const searchMatch =
-            referenceMesh.partId === null ||
-            matchesSearch(
-              result.parts.find((part) => part.id === referenceMesh.partId) ??
-                result.parts[0],
-              state.searchTerm
-            );
-
           referenceMesh.mesh.visible = !hidden;
-          referenceMesh.material.transparent =
-            referenceMesh.baseOpacity < 1 || !searchMatch;
-          referenceMesh.material.opacity = searchMatch
-            ? referenceMesh.baseOpacity
-            : Math.min(referenceMesh.baseOpacity, 0.28);
-
-          if (referenceMesh.material.emissive) {
-            referenceMesh.material.emissive.set(
-              selected ? partColor(referenceMesh.partId ?? "", result) : "#000000"
-            );
-            referenceMesh.material.emissiveIntensity = selected
-              ? Math.max(referenceMesh.baseEmissiveIntensity, 0.48)
-              : referenceMesh.baseEmissiveIntensity;
-          }
         }
       }
 
@@ -2335,6 +2338,7 @@ function ViewerCanvas({
 
   return (
     <div
+      data-lenis-prevent
       className={`relative w-full overflow-hidden rounded-[1.8rem] border border-white/10 bg-[#040714] ${
         fullscreen ? "min-h-0 h-full" : "min-h-[480px] xl:min-h-0 xl:h-full"
       }`}
@@ -2366,10 +2370,10 @@ function ViewerCanvas({
         {isLoading
           ? "Analyzing upload"
           : referenceModelState === "reference"
-            ? "Reference GLB loaded"
-            : referenceModelState === "loading"
-              ? "Loading reference GLB"
-              : "Offline study fallback"}
+            ? "Anatomy model ready"
+          : referenceModelState === "loading"
+              ? "Loading anatomy model"
+              : "Anatomy model unavailable"}
       </div>
 
       <div ref={containerRef} className="absolute inset-0" />
@@ -2414,7 +2418,7 @@ function ViewerCanvas({
             );
           })}
         </svg>
-        {visibleLabels.map((part) => {
+        {visibleLabels.map((part, index) => {
           const layout = labelLayouts[part.id];
           const selected = selectedPartId === part.id;
 
@@ -2427,7 +2431,7 @@ function ViewerCanvas({
               key={part.id}
               type="button"
               onClick={() => onSelectPart(part.id)}
-              className={`pointer-events-auto absolute max-w-[calc(50%-7rem)] -translate-x-1/2 -translate-y-1/2 truncate rounded-full border px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] backdrop-blur transition-[left,top,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] ${
+              className={`motion-label pointer-events-auto absolute max-w-[calc(50%-7rem)] -translate-x-1/2 -translate-y-1/2 truncate rounded-full border px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] backdrop-blur transition-[left,top,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] ${
                 selected
                   ? "border-cyan-300/45 bg-cyan-500/18 text-white shadow-[0_0_24px_rgba(56,189,248,0.2)]"
                   : "border-white/10 bg-slate-950/66 text-white/80 hover:bg-white/[0.08]"
@@ -2435,7 +2439,8 @@ function ViewerCanvas({
               style={{
                 left: layout.x,
                 top: layout.y,
-                boxShadow: `0 0 0 1px ${partInsightsColor(part.id, result)}`
+                boxShadow: `0 0 0 1px ${partInsightsColor(part.id, result)}`,
+                animationDelay: `${index * 46}ms`
               }}
             >
               <span
@@ -2457,7 +2462,7 @@ function ViewerCanvas({
             ? result.atlasMetadata?.referenceAttribution ?? "Reference anatomy"
             : referenceModelState === "loading"
               ? "Loading real anatomy model"
-              : "Reference model unavailable · local fallback"}
+              : "The supplied anatomy model could not be loaded"}
         </div>
       </div>
     </div>

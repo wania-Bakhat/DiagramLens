@@ -3,11 +3,14 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type ChangeEvent,
   type DragEvent
 } from "react";
+import Lenis from "lenis";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { AnatomyViewer } from "./anatomy-viewer";
 import {
   atlasLibrary,
@@ -171,6 +174,149 @@ function buildAtlasPreviewResult(organ: AtlasOrgan): VisionExtractionResult {
   return buildAtlasResult(organ, `${organ.slug}-atlas-diagram.png`);
 }
 
+const swapAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function RandomLetterSwap({ text }: { text: string }) {
+  const [displayText, setDisplayText] = useState(text);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current !== null) {
+        window.clearInterval(frameRef.current);
+      }
+    };
+  }, []);
+
+  const animate = () => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    if (frameRef.current !== null) {
+      window.clearInterval(frameRef.current);
+    }
+
+    let step = 0;
+    frameRef.current = window.setInterval(() => {
+      const revealed = Math.floor(step / 2);
+      setDisplayText(
+        text
+          .split("")
+          .map((character, index) => {
+            if (character === " " || index < revealed) {
+              return character;
+            }
+            return swapAlphabet[(step * 7 + index * 11) % swapAlphabet.length];
+          })
+          .join("")
+      );
+
+      step += 1;
+      if (step > text.length * 2) {
+        if (frameRef.current !== null) {
+          window.clearInterval(frameRef.current);
+          frameRef.current = null;
+        }
+        setDisplayText(text);
+      }
+    }, 38);
+  };
+
+  return (
+    <span
+      aria-label={text}
+      className="inline-block cursor-default select-none"
+      onFocus={animate}
+      onMouseEnter={animate}
+      tabIndex={0}
+    >
+      <span aria-hidden="true">{displayText}</span>
+    </span>
+  );
+}
+
+const medicalCardImageByOrgan: Record<string, string> = {
+  heart: "/images/heart.png",
+  lungs: "/images/lungs.png",
+  brain: "/images/brain.png",
+  kidneys: "/images/kidneys.png",
+  liver: "/images/liver.png",
+  eye: "/images/eye.png",
+  pancreas: "/images/pancreas.png",
+  "digestive-system": "/images/digestive-system.png",
+  spleen: "/images/spleen.png",
+  "vascular-system": "/images/vascular.png",
+  skeleton: "/images/skeleton.png",
+  "human-body": "/images/human-body.png"
+};
+
+function AtlasModelPreview({ organ }: { organ: AtlasOrgan }) {
+  const tone = organ.theme.accent;
+  const surfaceId = `${organ.slug}-model-surface`;
+  const previewSource = medicalCardImageByOrgan[organ.slug];
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const shared = {
+    fill: `url(#${surfaceId})`,
+    stroke: "rgba(255,255,255,0.52)",
+    strokeWidth: 1.2
+  };
+
+  const specimen = (() => {
+    switch (organ.slug) {
+      case "heart":
+        return <path {...shared} d="M50 85C27 65 18 49 22 34c4-15 24-20 34-4 11-16 31-11 35 4 4 15-5 31-28 51l-13 12Z" />;
+      case "brain":
+        return <path {...shared} d="M21 57c-6-15 5-28 17-27 3-15 22-19 31-8 15-8 29 5 25 20 13 9 6 31-10 31-7 14-28 12-34 2-12 7-28-3-24-18-3 1-4 1-5 0Z" />;
+      case "lungs":
+        return <><path {...shared} d="M48 32v19c-17-13-31 3-28 28 2 16 12 24 28 25V57" /><path {...shared} d="M52 32v19c17-13 31 3 28 28-2 16-12 24-28 25V57" /><path d="M48 18h4v39h-4z" fill="rgba(224,242,254,.9)" /></>;
+      case "kidneys":
+        return <><path {...shared} d="M44 28c-23-7-31 13-22 35 6 15 22 18 31 6-9-18-4-31-9-41Z" /><path {...shared} d="M56 28c23-7 31 13 22 35-6 15-22 18-31 6 9-18 4-31 9-41Z" /></>;
+      case "liver":
+        return <path {...shared} d="M17 57c7-25 28-37 58-33 13 2 17 10 14 22-3 15-18 27-38 27-20 0-31-4-34-16Z" />;
+      case "eye":
+        return <><path {...shared} d="M13 59C29 35 43 26 60 30c14 3 23 13 31 29-17 20-34 29-50 25-12-3-21-12-28-25Z" /><circle cx="52" cy="57" r="15" fill={tone} opacity=".78" /><circle cx="52" cy="57" r="6" fill="#020617" /></>;
+      case "pancreas":
+        return <path {...shared} d="M14 57c11-15 27-19 43-13 11-12 23-9 30 1 5 8-1 18-13 16-12 9-28 11-39 4-9 1-17-1-21-8Z" />;
+      case "digestive-system":
+        return <><path {...shared} d="M34 23c8-6 27-5 34 3 5 7-2 17-13 16-9 0-16-5-21-19Z" /><path d="M39 49c-14 0-18 20-5 21-15 13 8 23 16 8 6 15 28 5 14-8 13-11 4-23-7-18-5-8-13-7-18-3Z" fill={`url(#${surfaceId})`} stroke="rgba(255,255,255,.52)" strokeWidth="1.2" /></>;
+      case "spleen":
+        return <path {...shared} d="M28 31c18-15 43-5 45 13 2 17-10 38-29 36-20-2-29-28-16-49Z" />;
+      case "vascular-system":
+        return <path d="M50 18v75M50 38 28 53m22-7 24 15M36 58l-12 22m40-18 14 19M50 70l-16 25m16-25 16 25" fill="none" stroke={tone} strokeLinecap="round" strokeWidth="5" />;
+      case "skeleton":
+        return <path d="M50 18a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 18v26m-18-16 18 8 18-8M38 58l-7 27m31-27 7 27M50 62 37 96m13-34 13 34" fill="none" stroke={`url(#${surfaceId})`} strokeLinecap="round" strokeWidth="7" />;
+      default:
+        return <path {...shared} d="M50 15c16 10 28 25 27 43-1 20-12 33-27 42-15-9-26-22-27-42-1-18 11-33 27-43Z" />;
+    }
+  })();
+
+  return (
+    <div className="relative aspect-square w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-slate-950/55">
+      {previewSource && !previewFailed ? (
+        <img
+          src={previewSource}
+          alt={`${organ.organName} medical reference image`}
+          loading="lazy"
+          onError={() => setPreviewFailed(true)}
+          className="h-full w-full object-contain p-1.5 transition duration-500 group-hover:scale-[1.03]"
+        />
+      ) : (
+        <svg viewBox="0 0 104 112" role="img" aria-label={`${organ.organName} 3D model preview`} className="h-[6.8rem] w-[6.8rem] drop-shadow-[0_12px_18px_rgba(0,0,0,0.42)]">
+          <defs>
+            <radialGradient id={surfaceId} cx="30%" cy="22%" r="82%">
+              <stop offset="0" stopColor="#ffffff" stopOpacity=".94" />
+              <stop offset=".27" stopColor={tone} stopOpacity=".95" />
+              <stop offset="1" stopColor="#0f172a" stopOpacity=".94" />
+            </radialGradient>
+          </defs>
+          {specimen}
+        </svg>
+      )}
+    </div>
+  );
+}
+
 function AtlasCard({
   organ,
   active,
@@ -183,26 +329,28 @@ function AtlasCard({
   onSelect: () => void;
 }) {
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onSelect}
-      className={`group relative overflow-hidden rounded-[1.9rem] border p-4 text-left transition duration-300 hover:-translate-y-1 ${
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -6, scale: 1.015 }}
+      whileTap={{ scale: 0.985 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ type: "spring", stiffness: 320, damping: 24, mass: 0.7 }}
+      className={`group relative overflow-hidden rounded-[1.9rem] border p-4 text-left ${
         active
-          ? "border-white/20 bg-white/[0.08] shadow-[0_24px_70px_rgba(8,15,34,0.4)]"
+          ? "border-white/25 bg-white/[0.08] shadow-[0_24px_70px_rgba(8,15,34,0.4)]"
           : "border-white/10 bg-white/[0.04] hover:border-white/18 hover:bg-white/[0.06]"
       } ${isPending ? "opacity-90" : ""}`}
-      style={{
-        boxShadow: active ? `0 0 0 1px ${organ.theme.glow}` : undefined
-      }}
     >
       <div
         aria-hidden="true"
-        className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
         style={{
-          background: `radial-gradient(circle at top left, ${organ.theme.glow}, transparent 56%)`
+          background: `radial-gradient(circle at 85% 8%, ${organ.theme.glow}, transparent 48%)`
         }}
       />
-
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[0.65rem] uppercase tracking-[0.34em] text-white/[0.42]">
@@ -239,22 +387,8 @@ function AtlasCard({
           </p>
         </div>
 
-        <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/55 p-4">
-          <p className="text-[0.65rem] uppercase tracking-[0.28em] text-white/[0.42]">
-            3D model
-          </p>
-          <div className="mt-3 flex h-24 items-center justify-center rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))]">
-            <div
-              className="h-14 w-14 rounded-full"
-              style={{
-                background: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9), ${organ.theme.accent} 55%, ${organ.theme.glow} 100%)`
-              }}
-            />
-          </div>
-          <p className="mt-3 text-sm font-semibold text-white">{organ.model.assetLabel}</p>
-          <p className="mt-1 text-xs leading-5 text-white/[0.54]">
-            {organ.model.assetFileName}
-          </p>
+        <div className="aspect-square rounded-[1.4rem] border border-white/10 bg-slate-950/55 p-2.5">
+          <AtlasModelPreview organ={organ} />
         </div>
       </div>
 
@@ -262,7 +396,7 @@ function AtlasCard({
         <span>{organ.model.statusLabel}</span>
         <span>{active ? "Loaded in viewer" : "Load into viewer"}</span>
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -275,7 +409,9 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [isStudyLaunching, setIsStudyLaunching] = useState(false);
   const [isAtlasPending, startAtlasTransition] = useTransition();
+  const studyLaunchTimer = useRef<number | null>(null);
 
   const selectedAtlas = useMemo(
     () => findAtlasOrgan(selectedAtlasSlug),
@@ -318,12 +454,31 @@ export default function Home() {
         value: currentOrgan.organName
       },
       {
-        label: "3D preset",
-        value: currentOrgan.model.assetLabel
+        label: "Study format",
+        value: "Interactive 3D"
       }
     ],
     [currentOrgan]
   );
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const lenis = new Lenis({
+      autoRaf: true,
+      anchors: { offset: -18 },
+      lerp: 0.085,
+      smoothWheel: true,
+      stopInertiaOnNavigate: true,
+      prevent: (node) =>
+        node instanceof HTMLElement &&
+        Boolean(node.closest("[data-lenis-prevent]"))
+    });
+
+    return () => lenis.destroy();
+  }, []);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -396,13 +551,30 @@ export default function Home() {
     };
   }, [isViewerOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (studyLaunchTimer.current !== null) {
+        window.clearTimeout(studyLaunchTimer.current);
+      }
+    };
+  }, []);
+
   function selectAtlas(organ: AtlasOrgan) {
+    if (studyLaunchTimer.current !== null) {
+      window.clearTimeout(studyLaunchTimer.current);
+    }
+
+    setIsStudyLaunching(true);
     startAtlasTransition(() => {
       setSelectedAtlasSlug(organ.slug);
       setViewMode("atlas");
       setError(null);
     });
-    setIsViewerOpen(true);
+    studyLaunchTimer.current = window.setTimeout(() => {
+      setIsViewerOpen(true);
+      setIsStudyLaunching(false);
+      studyLaunchTimer.current = null;
+    }, 180);
   }
 
   function acceptFile(file: File | undefined) {
@@ -457,18 +629,19 @@ export default function Home() {
       : "Atlas preview";
 
   return (
+    <MotionConfig reducedMotion="user">
     <main id="top" className="relative isolate overflow-hidden">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           backgroundImage:
-            "radial-gradient(circle at 20% 10%, rgba(251, 113, 133, 0.18), transparent 24%), radial-gradient(circle at 82% 14%, rgba(56, 189, 248, 0.16), transparent 22%), radial-gradient(circle at 50% 92%, rgba(52, 211, 153, 0.08), transparent 28%), linear-gradient(180deg, #050816 0%, #09111f 44%, #04070f 100%)"
+            "radial-gradient(ellipse at 50% -12%, rgba(148,163,184,0.18), transparent 36%), radial-gradient(ellipse at 88% 28%, rgba(30,41,59,0.52), transparent 34%), linear-gradient(180deg, #020617 0%, #080d17 46%, #02050b 100%)"
         }}
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 opacity-35"
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.18]"
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)",
@@ -481,7 +654,12 @@ export default function Home() {
       />
 
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 pb-16 pt-5 md:px-10 lg:px-12">
-        <header className="flex items-center justify-between gap-4 rounded-full border border-white/10 bg-white/5 px-4 py-3 shadow-glow backdrop-blur-xl md:px-5">
+        <motion.header
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 shadow-[0_18px_70px_rgba(0,0,0,0.22)] backdrop-blur-xl md:px-5"
+        >
           <div className="flex items-center gap-3">
             <BrandMark />
             <div className="leading-tight">
@@ -513,26 +691,22 @@ export default function Home() {
             Start studying
             <ArrowIcon />
           </a>
-        </header>
+        </motion.header>
 
-        <section className="mt-16 max-w-5xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium uppercase tracking-[0.3em] text-white/60 backdrop-blur">
-            <SparkIcon />
-            Interactive 3D anatomy atlas
-          </div>
-
-          <div className="mt-8 space-y-6">
-            <h1 className="max-w-5xl font-display text-5xl font-semibold leading-[0.92] tracking-[-0.05em] text-balance text-white md:text-6xl xl:text-7xl">
-              DiagramLens — Interactive Human Anatomy Atlas.
+        <motion.section
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, duration: 0.6, ease: "easeOut" }}
+          className="flex min-h-[72svh] max-w-6xl flex-col justify-center py-16 md:min-h-[78svh] md:py-24"
+        >
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.5 }} className="space-y-7">
+            <h1 className="font-display text-5xl font-semibold leading-[0.88] tracking-[-0.07em] text-white md:text-7xl xl:text-8xl">
+              <RandomLetterSwap text="DiagramLens" />
             </h1>
-            <p className="max-w-2xl text-lg leading-8 text-white/[0.72] md:text-xl">
-              Explore human anatomy in 3D, upload medical diagrams, study each
-              connected structure, and learn through guided questions.
+            <p className="max-w-xl text-base leading-7 text-white/[0.58] md:text-lg">
+              An interactive anatomy atlas for clear, focused study.
             </p>
-            <p className="max-w-2xl text-sm uppercase tracking-[0.28em] text-white/[0.45]">
-              Current study focus: {currentOrgan.studyFocus}
-            </p>
-          </div>
+          </motion.div>
 
           <div className="mt-8 flex flex-wrap gap-3">
             <a
@@ -550,14 +724,21 @@ export default function Home() {
             </a>
           </div>
 
-          <div className="mt-10 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-3">
+          <div className="mt-14 grid max-w-3xl gap-4 border-t border-white/10 pt-5 sm:grid-cols-3">
             {heroStats.map((stat) => (
               <StatTile key={stat.label} label={stat.label} value={stat.value} />
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section id="atlas" className="mt-24">
+        <motion.section
+          id="atlas"
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.08 }}
+          transition={{ duration: 0.55, ease: "easeOut" }}
+          className="mt-24"
+        >
           <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs uppercase tracking-[0.3em] text-white/[0.45]">
@@ -600,15 +781,19 @@ export default function Home() {
                 key={organ.slug}
                 organ={organ}
                 active={organ.slug === selectedAtlas.slug}
-                isPending={isAtlasPending}
+                isPending={isAtlasPending || (isStudyLaunching && organ.slug === selectedAtlas.slug)}
                 onSelect={() => selectAtlas(organ)}
               />
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        <section
+        <motion.section
           id="workspace"
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.08 }}
+          transition={{ duration: 0.55, ease: "easeOut" }}
           className="mt-24 grid gap-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-start"
         >
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-5 shadow-soft backdrop-blur-xl">
@@ -758,14 +943,21 @@ export default function Home() {
                   {currentOrgan.parts.length} structures
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2">
-                  {currentOrgan.model.assetLabel}
+                  Interactive anatomy
                 </span>
               </div>
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section id="how-it-works" className="mt-24 pb-4">
+        <motion.section
+          id="how-it-works"
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.08 }}
+          transition={{ duration: 0.55, ease: "easeOut" }}
+          className="mt-24 pb-4"
+        >
           <div className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.3em] text-white/[0.45]">
               How it works
@@ -784,7 +976,7 @@ export default function Home() {
               <StepRow key={step.index} {...step} />
             ))}
           </div>
-        </section>
+        </motion.section>
 
         <footer className="mt-16 flex flex-col gap-4 border-t border-white/10 pt-6 text-sm text-white/[0.45] md:flex-row md:items-center md:justify-between">
           <p>
@@ -801,14 +993,25 @@ export default function Home() {
         </footer>
       </div>
 
-      {isViewerOpen ? (
-        <AnatomyViewer
-          result={currentResult}
-          isLoading={isExtracting}
-          fullscreen
-          onExitFullscreen={() => setIsViewerOpen(false)}
-        />
-      ) : null}
+      <AnimatePresence>
+        {isViewerOpen ? (
+          <motion.div
+            key="study-mode"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.26, ease: "easeOut" }}
+          >
+            <AnatomyViewer
+              result={currentResult}
+              isLoading={isExtracting}
+              fullscreen
+              onExitFullscreen={() => setIsViewerOpen(false)}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </main>
+    </MotionConfig>
   );
 }

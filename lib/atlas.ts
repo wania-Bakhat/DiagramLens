@@ -11,7 +11,12 @@ export type AtlasCategory =
   | "nervous"
   | "urinary"
   | "metabolic"
-  | "visual";
+  | "visual"
+  | "digestive"
+  | "immune"
+  | "vascular"
+  | "skeletal"
+  | "integrated";
 
 export type AtlasModelMetadata = {
   assetLabel: string;
@@ -21,6 +26,7 @@ export type AtlasModelMetadata = {
   loaderHint: string;
   scaleHint: string;
   statusLabel: string;
+  isolateReferenceParts?: boolean;
 };
 
 export type AtlasTheme = {
@@ -63,15 +69,13 @@ function atlasMetadataFromOrgan(organ: AtlasOrgan): VisionAtlasMetadata {
     loaderHint: organ.model.loaderHint,
     scaleHint: organ.model.scaleHint,
     statusLabel: organ.model.statusLabel,
+    isolateReferenceParts: organ.model.isolateReferenceParts,
     accent: organ.theme.accent,
     surface: organ.theme.surface
   };
 }
 
-const humanReferenceAtlasAssetBase =
-  "https://cdn.humanatlas.io/digital-objects/ref-organ";
-const humanReferenceAtlasAttribution =
-  "Human Reference Atlas (HuBMAP) · CC BY 4.0";
+const sketchfabLocalAttribution = "Sketchfab model · supplied locally";
 
 export const atlasLibrary: AtlasOrgan[] = [
   {
@@ -91,11 +95,11 @@ export const atlasLibrary: AtlasOrgan[] = [
       surface: "rgba(251,113,133,0.1)"
     },
     model: {
-      assetLabel: "Human Reference Atlas heart",
-      assetFileName: "VH_M_Heart.glb",
-      referenceAssetUrl: "/models/human-reference-atlas/heart.glb",
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the bundled Human Reference Atlas heart GLB; its chambers and valves remain independently selectable.",
+      assetLabel: "Sketchfab anatomical heart",
+      assetFileName: "heart.glb",
+      referenceAssetUrl: "/models/sketchfab-models/heart.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab heart GLB.",
       scaleHint: "Compact organ scale with a slight left-facing tilt.",
       statusLabel: "Verified local 3D model"
     },
@@ -221,11 +225,11 @@ export const atlasLibrary: AtlasOrgan[] = [
       surface: "rgba(56,189,248,0.1)"
     },
     model: {
-      assetLabel: "Human Reference Atlas lungs",
-      assetFileName: "VH_M_Lung.glb",
-      referenceAssetUrl: "/models/human-reference-atlas/lungs.glb",
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the bundled Human Reference Atlas respiratory GLB with separable airway branches and lobes.",
+      assetLabel: "Sketchfab realistic lungs",
+      assetFileName: "realistic_human_lungs.glb",
+      referenceAssetUrl: "/models/sketchfab-models/realistic_human_lungs.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab lungs GLB.",
       scaleHint: "Tall bilateral arrangement that fills the chest cavity.",
       statusLabel: "Verified local 3D model"
     },
@@ -345,11 +349,11 @@ export const atlasLibrary: AtlasOrgan[] = [
       surface: "rgba(192,132,252,0.1)"
     },
     model: {
-      assetLabel: "Allen Human Reference Brain",
-      assetFileName: "Allen_F_Brain.glb",
-      referenceAssetUrl: "/models/human-reference-atlas/brain.glb",
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the bundled Allen / Human Reference Atlas brain GLB with its detailed anatomical hierarchy.",
+      assetLabel: "Sketchfab human brain",
+      assetFileName: "human_brain.glb",
+      referenceAssetUrl: "/models/sketchfab-models/human_brain.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab brain GLB.",
       scaleHint: "Side profile with stacked regions and a narrow stem.",
       statusLabel: "Verified local 3D model"
     },
@@ -414,25 +418,22 @@ export const atlasLibrary: AtlasOrgan[] = [
     category: "urinary",
     aliases: ["renal", "nephron", "urine", "filtration", "bladder"],
     summary:
-      "Kidney cross-section highlighting filtration layers, the pelvis, and the ureter that carries urine away.",
+      "Single-kidney cross-section highlighting the capsule, cortex, medulla, vessels, and the ureter that carries urine away.",
     studyFocus: "Follow blood into the cortex, through the medulla, and out through the ureter.",
     confidence: 0.94,
     diagramTitle: "Filtration pathway",
-    diagramSubtitle: "Cortex, medulla, and urine drainage",
+    diagramSubtitle: "Single-kidney cortex, medulla, vessels, and drainage",
     theme: {
       accent: "#34d399",
       glow: "rgba(52,211,153,0.24)",
       surface: "rgba(52,211,153,0.1)"
     },
     model: {
-      assetLabel: "Human Reference Atlas kidney pair",
-      assetFileName: "VH_M_Kidney_L.glb + VH_M_Kidney_R.glb",
-      referenceAssetUrl: [
-        "/models/human-reference-atlas/kidney-left.glb",
-        "/models/human-reference-atlas/kidney-right.glb"
-      ],
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the bundled left and right Human Reference Atlas kidney GLBs as one paired study model.",
+      assetLabel: "Sketchfab kidney cross-section",
+      assetFileName: "kidney.glb",
+      referenceAssetUrl: "/models/sketchfab-models/kidney.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab kidney GLB with internal structures.",
       scaleHint: "Vertical bean-like volume with a central funnel.",
       statusLabel: "Verified local 3D model"
     },
@@ -442,6 +443,18 @@ export const atlasLibrary: AtlasOrgan[] = [
         name: "Renal artery",
         description: "Blood vessel that brings blood into the kidney.",
         function: "Supplies the kidney with blood to be filtered."
+      },
+      {
+        id: "renal_vein",
+        name: "Renal vein",
+        description: "Blood vessel that carries filtered blood away from this kidney.",
+        function: "Returns filtered blood to the body's venous circulation."
+      },
+      {
+        id: "renal_capsule",
+        name: "Renal capsule",
+        description: "Thin outer fibrous covering of this single kidney.",
+        function: "Protects the kidney and helps maintain its shape."
       },
       {
         id: "renal_cortex",
@@ -454,12 +467,6 @@ export const atlasLibrary: AtlasOrgan[] = [
         name: "Renal medulla",
         description: "Inner region with the pyramids that concentrate urine.",
         function: "Moves filtered fluid deeper into the drainage system."
-      },
-      {
-        id: "renal_pelvis",
-        name: "Renal pelvis",
-        description: "Funnel-like space that collects urine before it leaves.",
-        function: "Channels urine into the ureter."
       },
       {
         id: "ureter",
@@ -476,23 +483,23 @@ export const atlasLibrary: AtlasOrgan[] = [
       },
       {
         sourcePartId: "renal_cortex",
+        targetPartId: "renal_vein",
+        relation: "returns filtered blood through"
+      },
+      {
+        sourcePartId: "renal_cortex",
         targetPartId: "renal_medulla",
         relation: "funnels filtered fluid into"
       },
       {
         sourcePartId: "renal_medulla",
-        targetPartId: "renal_pelvis",
-        relation: "drains toward"
+        targetPartId: "ureter",
+        relation: "drains urine into"
       },
       {
-        sourcePartId: "renal_pelvis",
-        targetPartId: "ureter",
-        relation: "funnels urine into"
-      },
-      {
-        sourcePartId: "renal_cortex",
-        targetPartId: "ureter",
-        relation: "returns filtered fluid through"
+        sourcePartId: "renal_capsule",
+        targetPartId: "renal_cortex",
+        relation: "surrounds"
       }
     ]
   },
@@ -513,11 +520,11 @@ export const atlasLibrary: AtlasOrgan[] = [
       surface: "rgba(249,115,22,0.1)"
     },
     model: {
-      assetLabel: "Hepatic lobes",
-      assetFileName: "3d-vh-m-liver.glb",
-      referenceAssetUrl: `${humanReferenceAtlasAssetBase}/liver-male/v1.2/assets/3d-vh-m-liver.glb`,
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the Human Reference Atlas liver GLB; the local study mesh only appears while it loads or if you are offline.",
+      assetLabel: "Sketchfab human liver",
+      assetFileName: "liver.glb",
+      referenceAssetUrl: "/models/sketchfab-models/liver.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab liver GLB.",
       scaleHint: "Wide asymmetric organ with a smooth, low profile.",
       statusLabel: "Interactive 3D model"
     },
@@ -598,11 +605,11 @@ export const atlasLibrary: AtlasOrgan[] = [
       surface: "rgba(250,204,21,0.1)"
     },
     model: {
-      assetLabel: "Human Reference Atlas eye",
-      assetFileName: "VH_M_Eye_L.glb",
-      referenceAssetUrl: "/models/human-reference-atlas/eye-left.glb",
-      referenceAttribution: humanReferenceAtlasAttribution,
-      loaderHint: "Loads the bundled Human Reference Atlas eye GLB with separable optical structures.",
+      assetLabel: "Sketchfab human eye",
+      assetFileName: "eye.glb",
+      referenceAssetUrl: "/models/sketchfab-models/eye.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab eye GLB.",
       scaleHint: "Small spherical profile with a forward-facing corneal dome.",
       statusLabel: "Verified local 3D model"
     },
@@ -691,10 +698,10 @@ function extendOrgan(
   );
 }
 
-// The bundled HuBMAP meshes are intentionally concise. These expanded study
-// maps keep the viewer useful as an atlas: every important region gets a label
-// and a connected explanation, even when the source mesh groups it with a
-// neighbouring structure.
+// Source meshes vary in how finely they separate structures. These expanded
+// study maps keep the viewer useful as an atlas: every important region gets a
+// label and a connected explanation, even when the source mesh groups it with
+// a neighbouring structure.
 extendOrgan(
   "heart",
   [
@@ -757,17 +764,11 @@ extendOrgan(
 extendOrgan(
   "kidneys",
   [
-    { id: "left_kidney", name: "Left kidney", description: "Left-sided kidney shown as part of the paired renal study.", function: "Filters blood and helps regulate fluid, electrolytes, and blood pressure." },
-    { id: "right_kidney", name: "Right kidney", description: "Right-sided kidney shown as part of the paired renal study.", function: "Filters blood and helps regulate fluid, electrolytes, and blood pressure." },
-    { id: "renal_vein", name: "Renal vein", description: "Vessel carrying filtered blood away from the kidney.", function: "Returns blood to the central circulation after renal processing." },
-    { id: "renal_pyramids", name: "Renal pyramids", description: "Triangular structures within the medulla.", function: "Concentrate urine and pass it toward the renal pelvis." }
+    { id: "renal_pyramids", name: "Renal pyramids", description: "Triangular structures within the medulla.", function: "Concentrate urine and pass it into the kidney's drainage pathway." }
   ],
   [
-    { sourcePartId: "left_kidney", targetPartId: "renal_cortex", relation: "contains" },
-    { sourcePartId: "right_kidney", targetPartId: "renal_cortex", relation: "contains" },
-    { sourcePartId: "renal_artery", targetPartId: "renal_vein", relation: "returns through" },
     { sourcePartId: "renal_medulla", targetPartId: "renal_pyramids", relation: "contains" },
-    { sourcePartId: "renal_pyramids", targetPartId: "renal_pelvis", relation: "drain into" }
+    { sourcePartId: "renal_pyramids", targetPartId: "ureter", relation: "drain urine toward" }
   ]
 );
 
@@ -821,11 +822,11 @@ atlasLibrary.push({
   diagramSubtitle: "Regions, duct pathway, and hormone-producing islands",
   theme: { accent: "#fbbf24", glow: "rgba(251,191,36,0.25)", surface: "rgba(251,191,36,0.1)" },
   model: {
-    assetLabel: "Human Reference Atlas pancreas",
-    assetFileName: "3d-vh-m-pancreas.glb",
-    referenceAssetUrl: `${humanReferenceAtlasAssetBase}/pancreas-male/v1.2/assets/3d-vh-m-pancreas.glb`,
-    referenceAttribution: humanReferenceAtlasAttribution,
-    loaderHint: "Loads the Human Reference Atlas pancreas GLB with a clear museum-style study presentation.",
+    assetLabel: "Sketchfab pancreas cross-section",
+    assetFileName: "human_pancreas_cross_section.glb",
+    referenceAssetUrl: "/models/sketchfab-models/human_pancreas_cross_section.glb",
+    referenceAttribution: sketchfabLocalAttribution,
+    loaderHint: "Loads the locally supplied Sketchfab pancreatic cross-section GLB.",
     scaleHint: "Low, elongated gland with the broad head on the duodenal side and a narrow tail toward the spleen.",
     statusLabel: "Interactive 3D model"
   },
@@ -846,6 +847,176 @@ atlasLibrary.push({
     { sourcePartId: "islets_of_langerhans", targetPartId: "pancreatic_body", relation: "are distributed through" }
   ]
 });
+
+atlasLibrary.push(
+  {
+    slug: "digestive-system",
+    organName: "Digestive System",
+    category: "digestive",
+    aliases: ["intestine", "colon", "digestion", "gastrointestinal", "bowel"],
+    summary: "A connected digestive study built from the liver, pancreas, and small and large intestines.",
+    studyFocus: "Follow digestion through the intestinal tract and identify the accessory organs that contribute enzymes and bile.",
+    confidence: 0.95,
+    diagramTitle: "Digestive pathway",
+    diagramSubtitle: "Accessory organs, small intestine, and colon",
+    theme: { accent: "#f59e0b", glow: "rgba(245,158,11,0.24)", surface: "rgba(245,158,11,0.1)" },
+    model: {
+      assetLabel: "Sketchfab digestive system",
+      assetFileName: "digestive_system.glb",
+      referenceAssetUrl: "/models/sketchfab-models/digestive_system.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab digestive-system GLB.",
+      scaleHint: "Wide abdominal composition with the intestinal loops below the accessory organs.",
+      statusLabel: "Verified local 3D model"
+    },
+    parts: [
+      { id: "liver", name: "Liver", description: "Large upper abdominal organ that makes bile.", function: "Processes nutrients and produces bile for digestion." },
+      { id: "pancreas", name: "Pancreas", description: "Elongated gland positioned behind the stomach.", function: "Releases digestive enzymes and blood-sugar hormones." },
+      { id: "small_intestine", name: "Small intestine", description: "Long coiled digestive tube in the central abdomen.", function: "Absorbs most nutrients from digested food." },
+      { id: "large_intestine", name: "Large intestine", description: "Broader intestinal frame around the small intestine.", function: "Reclaims water and compacts digestive waste." },
+      { id: "bile_pathway", name: "Bile pathway", description: "Duct system that carries bile toward the intestine.", function: "Delivers bile to support fat digestion." }
+    ],
+    relationships: [
+      { sourcePartId: "liver", targetPartId: "bile_pathway", relation: "produces bile for" },
+      { sourcePartId: "pancreas", targetPartId: "small_intestine", relation: "delivers enzymes to" },
+      { sourcePartId: "small_intestine", targetPartId: "large_intestine", relation: "continues into" }
+    ]
+  },
+  {
+    slug: "spleen",
+    organName: "Spleen",
+    category: "immune",
+    aliases: ["lymphatic", "immune", "splenic", "blood filter"],
+    summary: "A detailed spleen model for studying immune surveillance and blood filtration.",
+    studyFocus: "Identify the capsule, red pulp, white pulp, and the vessels entering at the hilum.",
+    confidence: 0.95,
+    diagramTitle: "Blood filtration and immunity",
+    diagramSubtitle: "White pulp, red pulp, capsule, and vessels",
+    theme: { accent: "#a78bfa", glow: "rgba(167,139,250,0.24)", surface: "rgba(167,139,250,0.1)" },
+    model: {
+      assetLabel: "Sketchfab spleen model",
+      assetFileName: "spleen_model.glb",
+      referenceAssetUrl: "/models/sketchfab-models/spleen_model.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab spleen GLB.",
+      scaleHint: "Compact, crescent-shaped organ with a vascular hilum.",
+      statusLabel: "Verified local 3D model"
+    },
+    parts: [
+      { id: "spleen", name: "Spleen", description: "Soft vascular organ in the upper left abdomen.", function: "Filters blood and supports immune responses." },
+      { id: "splenic_capsule", name: "Splenic capsule", description: "Fibrous outer covering of the spleen.", function: "Protects the organ and maintains its shape." },
+      { id: "white_pulp", name: "White pulp", description: "Immune-rich tissue arranged around arterioles.", function: "Monitors blood-borne antigens and mounts immune responses." },
+      { id: "red_pulp", name: "Red pulp", description: "Blood-filled tissue making up most of the spleen.", function: "Filters aged red cells and stores blood components." },
+      { id: "splenic_hilum", name: "Splenic hilum", description: "Indented surface where vessels enter and leave.", function: "Provides the route for splenic arteries, veins, and nerves." }
+    ],
+    relationships: [
+      { sourcePartId: "splenic_capsule", targetPartId: "spleen", relation: "surrounds" },
+      { sourcePartId: "white_pulp", targetPartId: "red_pulp", relation: "sits within" },
+      { sourcePartId: "splenic_hilum", targetPartId: "spleen", relation: "serves" }
+    ]
+  },
+  {
+    slug: "vascular-system",
+    organName: "Blood Vasculature",
+    category: "vascular",
+    aliases: ["blood vessels", "arteries", "veins", "circulation", "aorta"],
+    summary: "A body-scale vascular reference for tracing the major arterial and venous pathways.",
+    studyFocus: "Compare the central arterial routes with the large veins that return blood to the heart.",
+    confidence: 0.94,
+    diagramTitle: "Major circulation map",
+    diagramSubtitle: "Arteries, veins, and central return pathways",
+    theme: { accent: "#fb7185", glow: "rgba(251,113,133,0.24)", surface: "rgba(251,113,133,0.1)" },
+    model: {
+      assetLabel: "Sketchfab cardiovascular system",
+      assetFileName: "reworked_cardiovascular_system.glb",
+      referenceAssetUrl: "/models/sketchfab-models/reworked_cardiovascular_system.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab cardiovascular-system GLB.",
+      scaleHint: "Tall body-scale vessel map centered on the aorta and venae cavae.",
+      statusLabel: "Verified local 3D model"
+    },
+    parts: [
+      { id: "aorta", name: "Aorta", description: "Largest artery leaving the heart.", function: "Distributes oxygen-rich blood to systemic arteries." },
+      { id: "superior_vena_cava", name: "Superior vena cava", description: "Large vein returning blood from the upper body.", function: "Returns blood to the right atrium." },
+      { id: "inferior_vena_cava", name: "Inferior vena cava", description: "Large vein returning blood from the lower body.", function: "Returns blood to the right atrium." },
+      { id: "pulmonary_arteries", name: "Pulmonary arteries", description: "Vessels running from the heart to the lungs.", function: "Carry oxygen-poor blood to the lungs." },
+      { id: "pulmonary_veins", name: "Pulmonary veins", description: "Vessels returning from the lungs.", function: "Carry oxygen-rich blood to the left atrium." }
+    ],
+    relationships: [
+      { sourcePartId: "aorta", targetPartId: "inferior_vena_cava", relation: "is paired with systemic return through" },
+      { sourcePartId: "pulmonary_arteries", targetPartId: "pulmonary_veins", relation: "return through" },
+      { sourcePartId: "superior_vena_cava", targetPartId: "inferior_vena_cava", relation: "joins circulation with" }
+    ]
+  },
+  {
+    slug: "skeleton",
+    organName: "Skeleton",
+    category: "skeletal",
+    aliases: ["bones", "skeletal", "skull", "spine", "rib cage"],
+    summary: "Full articulated skeleton shown in an isolated skeletal study mode.",
+    studyFocus: "Use the full-body hierarchy to locate the axial skeleton, limbs, and major joints.",
+    confidence: 0.96,
+    diagramTitle: "Articulated skeletal system",
+    diagramSubtitle: "Axial framework, limbs, and joints",
+    theme: { accent: "#e2e8f0", glow: "rgba(226,232,240,0.22)", surface: "rgba(226,232,240,0.08)" },
+    model: {
+      assetLabel: "Sketchfab articulated skeleton",
+      assetFileName: "skeleton.glb",
+      referenceAssetUrl: "/models/sketchfab-models/skeleton.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab skeleton GLB.",
+      scaleHint: "Full standing human reference with individually modeled skeletal structures.",
+      statusLabel: "Local 3D model"
+    },
+    parts: [
+      { id: "skull", name: "Skull", description: "Bony framework of the head.", function: "Protects the brain and supports facial structures." },
+      { id: "vertebral_column", name: "Vertebral column", description: "Segmented bony column from neck to pelvis.", function: "Protects the spinal cord and supports posture." },
+      { id: "rib_cage", name: "Rib cage", description: "Thoracic framework of ribs and sternum.", function: "Protects the heart and lungs while supporting breathing." },
+      { id: "pelvis", name: "Pelvis", description: "Bony ring connecting the trunk and lower limbs.", function: "Transfers body weight and protects pelvic organs." },
+      { id: "femur", name: "Femur", description: "Largest bone in the thigh.", function: "Supports weight and drives lower-limb movement." },
+      { id: "humerus", name: "Humerus", description: "Long bone of the upper arm.", function: "Connects shoulder motion to the elbow." }
+    ],
+    relationships: [
+      { sourcePartId: "skull", targetPartId: "vertebral_column", relation: "sits above" },
+      { sourcePartId: "rib_cage", targetPartId: "vertebral_column", relation: "attaches to" },
+      { sourcePartId: "pelvis", targetPartId: "femur", relation: "connects to" },
+      { sourcePartId: "humerus", targetPartId: "rib_cage", relation: "articulates beside" }
+    ]
+  },
+  {
+    slug: "human-body",
+    organName: "Human Body",
+    category: "integrated",
+    aliases: ["person", "whole body", "full body", "human atlas"],
+    summary: "A high-detail, body-scale human model for studying whole-body form.",
+    studyFocus: "Explore how the major systems occupy the same human reference frame.",
+    confidence: 0.96,
+    diagramTitle: "Integrated human reference",
+    diagramSubtitle: "A complete body-scale anatomical hierarchy",
+    theme: { accent: "#67e8f9", glow: "rgba(103,232,249,0.22)", surface: "rgba(103,232,249,0.1)" },
+    model: {
+      assetLabel: "Sketchfab male human body",
+      assetFileName: "male_human_body.glb",
+      referenceAssetUrl: "/models/sketchfab-models/male_human_body.glb",
+      referenceAttribution: sketchfabLocalAttribution,
+      loaderHint: "Loads the locally supplied Sketchfab full-body GLB.",
+      scaleHint: "Full standing human figure with integrated systems and reference-organ proportions.",
+      statusLabel: "Verified local 3D model"
+    },
+    parts: [
+      { id: "skeletal_system", name: "Skeletal system", description: "Body-wide framework of bones and joints.", function: "Provides support, protection, and leverage for movement." },
+      { id: "circulatory_system", name: "Circulatory system", description: "Heart and body-wide vessels.", function: "Moves blood, oxygen, nutrients, and waste." },
+      { id: "digestive_system", name: "Digestive system", description: "Organs that process food and absorb nutrients.", function: "Breaks down food and supports nutrient uptake." },
+      { id: "respiratory_system", name: "Respiratory system", description: "Airway and lungs.", function: "Exchanges oxygen and carbon dioxide." },
+      { id: "urinary_system", name: "Urinary system", description: "Kidneys, ureters, and bladder.", function: "Filters blood and regulates fluid balance." }
+    ],
+    relationships: [
+      { sourcePartId: "respiratory_system", targetPartId: "circulatory_system", relation: "oxygenates" },
+      { sourcePartId: "digestive_system", targetPartId: "circulatory_system", relation: "supplies nutrients to" },
+      { sourcePartId: "skeletal_system", targetPartId: "urinary_system", relation: "protects" }
+    ]
+  }
+);
 
 export function findAtlasOrgan(identifier: string | null | undefined) {
   if (!identifier) {

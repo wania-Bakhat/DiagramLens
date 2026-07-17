@@ -21,6 +21,7 @@ export type VisionAtlasMetadata = {
   loaderHint: string;
   scaleHint: string;
   statusLabel: string;
+  isolateReferenceParts?: boolean;
   accent: string;
   surface: string;
 };
