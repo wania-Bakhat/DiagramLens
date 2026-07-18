@@ -64,9 +64,6 @@ type PartVisual = {
 type LabelLayout = {
   x: number;
   y: number;
-  anchorX: number;
-  anchorY: number;
-  side: "left" | "right";
   visible: boolean;
 };
 
@@ -227,11 +224,8 @@ function labelLayoutsChanged(
     return (
       !before ||
       before.visible !== after.visible ||
-      before.side !== after.side ||
       Math.abs(before.x - after.x) > 1.5 ||
-      Math.abs(before.y - after.y) > 1.5 ||
-      Math.abs(before.anchorX - after.anchorX) > 1.5 ||
-      Math.abs(before.anchorY - after.anchorY) > 1.5
+      Math.abs(before.y - after.y) > 1.5
     );
   });
 }
@@ -1936,6 +1930,10 @@ function ViewerCanvas({
       string,
       InstanceType<typeof THREE.Object3D>
     >();
+    const referencePartMeshes = new Map<
+      string,
+      InstanceType<typeof THREE.Mesh>
+    >();
     const referenceMeshes: ReferenceMesh[] = [];
     let referenceModelLoaded = false;
     let referenceModelPending = referenceAssetUrls.length > 0;
@@ -1979,8 +1977,8 @@ function ViewerCanvas({
             const part = findPartForReferenceObject(object, result.parts);
             candidate.userData.partId = part?.id;
 
-            if (part && !referenceAnchors.has(part.id)) {
-              referenceAnchors.set(part.id, candidate);
+            if (part && !referencePartMeshes.has(part.id)) {
+              referencePartMeshes.set(part.id, candidate);
             }
 
             // Leave every authored material and texture exactly as supplied by
@@ -1992,11 +1990,10 @@ function ViewerCanvas({
             });
           });
 
-          // Many authored GLBs retain generic mesh names. For labels that
-          // cannot be name-matched, raycast from the study-map direction onto
-          // the actual model and retain that surface point as the leader's
-          // anchor. This keeps the callout attached to the rendered anatomy
-          // instead of leaving it at a floating fallback position.
+          // Raycast every study structure to an exposed surface. Matched GLB
+          // meshes get their own surface point; generic meshes use the full
+          // model. This avoids markers being anchored at a mesh origin hidden
+          // inside the organ.
           assembledReferenceModel.updateMatrixWorld(true);
           const modelBounds = new THREE.Box3().setFromObject(assembledReferenceModel);
           const modelCenter = modelBounds.getCenter(new THREE.Vector3());
@@ -2005,10 +2002,6 @@ function ViewerCanvas({
           const anchorRaycaster = new THREE.Raycaster();
 
           for (const visual of visuals) {
-            if (referenceAnchors.has(visual.part.id)) {
-              continue;
-            }
-
             const direction = visual.placement.basePosition
               .clone()
               .sub(center)
@@ -2019,7 +2012,9 @@ function ViewerCanvas({
 
             const origin = modelCenter.clone().addScaledVector(direction, modelRadius * 2.2);
             anchorRaycaster.set(origin, direction.clone().negate());
-            const hit = anchorRaycaster.intersectObject(assembledReferenceModel, true)[0];
+            const anchorTarget =
+              referencePartMeshes.get(visual.part.id) ?? assembledReferenceModel;
+            const hit = anchorRaycaster.intersectObject(anchorTarget, true)[0];
             if (!hit) {
               continue;
             }
@@ -2078,7 +2073,9 @@ function ViewerCanvas({
     let explodeFactor = explode ? 1 : 0;
     let animationFrame = 0;
     let lastLabelUpdate = 0;
-    const tempCameraSpace = new THREE.Vector3();
+    const markerRaycaster = new THREE.Raycaster();
+    const tempAnchorPosition = new THREE.Vector3();
+    const tempProjectedPosition = new THREE.Vector3();
     const tempLabelOffset = new THREE.Vector3();
 
     function updateLines(selectedId: string | null) {
@@ -2104,7 +2101,7 @@ function ViewerCanvas({
     }
 
     function updateLabels() {
-      if (performance.now() - lastLabelUpdate < 80) {
+      if (performance.now() - lastLabelUpdate < 32) {
         return;
       }
 
@@ -2120,9 +2117,6 @@ function ViewerCanvas({
           nextLayouts[visual.part.id] = {
             x: 0,
             y: 0,
-            anchorX: 0,
-            anchorY: 0,
-            side: "left",
             visible: false
           };
         }
@@ -2134,15 +2128,6 @@ function ViewerCanvas({
         return;
       }
 
-      const projectedLabels: Array<{
-        partId: string;
-        x: number;
-        y: number;
-        anchorX: number;
-        anchorY: number;
-        side: "left" | "right";
-      }> = [];
-
       for (const visual of visuals) {
         const hidden = state.hiddenPartIds.has(visual.part.id);
         const matches =
@@ -2152,114 +2137,55 @@ function ViewerCanvas({
           nextLayouts[visual.part.id] = {
             x: 0,
             y: 0,
-            anchorX: 0,
-            anchorY: 0,
-            side: "left",
             visible: false
           };
           continue;
         }
 
         const referenceAnchor = referenceAnchors.get(visual.part.id);
-        (referenceAnchor ?? visual.object).getWorldPosition(tempCameraSpace);
+        (referenceAnchor ?? visual.object).getWorldPosition(tempAnchorPosition);
         tempLabelOffset
           .copy(referenceAnchor ? new THREE.Vector3() : visual.placement.labelOffset)
           .applyQuaternion(referenceAnchor ? new THREE.Quaternion() : root.quaternion);
-        tempCameraSpace.add(tempLabelOffset);
-        tempCameraSpace.project(camera);
+        tempAnchorPosition.add(tempLabelOffset);
+        tempProjectedPosition.copy(tempAnchorPosition).project(camera);
 
         const visible =
-          tempCameraSpace.z > -1 &&
-          tempCameraSpace.z < 1 &&
-          tempCameraSpace.x >= -1.05 &&
-          tempCameraSpace.x <= 1.05 &&
-          tempCameraSpace.y >= -1.05 &&
-          tempCameraSpace.y <= 1.05;
+          tempProjectedPosition.z > -1 &&
+          tempProjectedPosition.z < 1 &&
+          tempProjectedPosition.x >= -1.05 &&
+          tempProjectedPosition.x <= 1.05 &&
+          tempProjectedPosition.y >= -1.05 &&
+          tempProjectedPosition.y <= 1.05;
 
         if (!visible) {
           nextLayouts[visual.part.id] = {
             x: 0,
             y: 0,
-            anchorX: 0,
-            anchorY: 0,
-            side: "left",
             visible: false
           };
           continue;
         }
 
-        const x = ((tempCameraSpace.x + 1) * 0.5) * viewport.clientWidth;
-        const y = ((1 - tempCameraSpace.y) * 0.5) * viewport.clientHeight;
-        projectedLabels.push({
-          partId: visual.part.id,
-          x,
-          y,
-          anchorX: x,
-          anchorY: y,
-          side: x < viewport.clientWidth / 2 ? "left" : "right"
-        });
-      }
-
-      // Keep anatomy callouts in tidy, collision-free rails on either side of
-      // the stage. The label stays associated with its mesh, but never sits on
-      // top of the model where it would obscure the structure being studied.
-      for (const side of ["left", "right"] as const) {
-        const sideLabels = projectedLabels
-          .filter((label) => label.side === side)
-          .sort((a, b) => a.y - b.y);
-        const top = 96;
-        const bottom = Math.max(top, viewport.clientHeight - 70);
-        const distance = camera.position.distanceTo(controls.target);
-        const zoomLabelFactor = THREE.MathUtils.clamp(1.45 - distance / 9, 0.42, 1);
-        const maxLabels = Math.max(
-          3,
-          Math.floor(((bottom - top) / 42 + 1) * zoomLabelFactor)
-        );
-        const displayLabels =
-          sideLabels.length > maxLabels
-            ? [...sideLabels]
-                .sort((a, b) => {
-                  const aPriority = a.partId === state.selectedPartId ? -1 : 0;
-                  const bPriority = b.partId === state.selectedPartId ? -1 : 0;
-                  return (
-                    aPriority - bPriority ||
-                    Math.abs(a.y - viewport.clientHeight / 2) -
-                      Math.abs(b.y - viewport.clientHeight / 2)
-                  );
-                })
-                .slice(0, maxLabels)
-                .sort((a, b) => a.y - b.y)
-            : sideLabels;
-        const gap = Math.min(
-          46,
-          Math.max(25, (bottom - top) / Math.max(displayLabels.length - 1, 1))
-        );
-        const labelYs = displayLabels.map((label) =>
-          Math.max(top, Math.min(bottom, label.y))
-        );
-
-        for (let index = 1; index < labelYs.length; index += 1) {
-          labelYs[index] = Math.max(labelYs[index], labelYs[index - 1] + gap);
+        // A marker should disappear when its surface point rotates behind the
+        // organ. Otherwise a back-facing structure would look detached from
+        // the anatomy even though its projected coordinates are technically valid.
+        let obscured = false;
+        if (referenceModelLoaded) {
+          const cameraToAnchor = tempAnchorPosition.clone().sub(camera.position);
+          const anchorDistance = cameraToAnchor.length();
+          markerRaycaster.set(camera.position, cameraToAnchor.normalize());
+          const nearestHit = markerRaycaster.intersectObject(referenceModelRoot, true)[0];
+          obscured = Boolean(
+            nearestHit && nearestHit.distance < anchorDistance - 0.035
+          );
         }
 
-        const overflow = Math.max(0, (labelYs.at(-1) ?? top) - bottom);
-        if (overflow > 0) {
-          for (let index = 0; index < labelYs.length; index += 1) {
-            labelYs[index] -= overflow;
-          }
-        }
-
-        const railX = side === "left" ? 100 : viewport.clientWidth - 100;
-        for (const [index, label] of displayLabels.entries()) {
-          nextLayouts[label.partId] = {
-            x: railX,
-            y: labelYs[index],
-            anchorX: label.anchorX,
-            anchorY: label.anchorY,
-            side,
-            visible: true
-          };
-        }
+        nextLayouts[visual.part.id] = {
+          x: ((tempProjectedPosition.x + 1) * 0.5) * viewport.clientWidth,
+          y: ((1 - tempProjectedPosition.y) * 0.5) * viewport.clientHeight,
+          visible: !obscured
+        };
       }
 
       if (labelLayoutsChanged(labelLayoutsRef.current, nextLayouts)) {
@@ -2335,6 +2261,9 @@ function ViewerCanvas({
   const visibleLabels = result.parts.filter(
     (part) => !hiddenPartIds.has(part.id) && matchesSearch(part, searchTerm)
   );
+  const visibleMarkerCount = visibleLabels.filter(
+    (part) => labelLayouts[part.id]?.visible
+  ).length;
 
   return (
     <div
@@ -2363,7 +2292,7 @@ function ViewerCanvas({
         <span className="text-white/30">·</span>
         Scroll to zoom
         <span className="text-white/30">·</span>
-        Click parts
+        Hover markers
       </div>
 
       <div className="absolute right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/60 backdrop-blur">
@@ -2393,31 +2322,6 @@ function ViewerCanvas({
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        <svg
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full overflow-visible"
-        >
-          {visibleLabels.map((part) => {
-            const layout = labelLayouts[part.id];
-
-            if (!layout?.visible) {
-              return null;
-            }
-
-            return (
-              <path
-                key={`leader-${part.id}`}
-                d={`M ${layout.anchorX} ${layout.anchorY} L ${
-                  layout.side === "left" ? layout.x + 42 : layout.x - 42
-                } ${layout.y}`}
-                fill="none"
-                stroke={partColor(part.id, result)}
-                strokeOpacity="0.58"
-                strokeWidth="1.2"
-              />
-            );
-          })}
-        </svg>
         {visibleLabels.map((part, index) => {
           const layout = labelLayouts[part.id];
           const selected = selectedPartId === part.id;
@@ -2431,23 +2335,27 @@ function ViewerCanvas({
               key={part.id}
               type="button"
               onClick={() => onSelectPart(part.id)}
-              className={`motion-label pointer-events-auto absolute max-w-[calc(50%-7rem)] -translate-x-1/2 -translate-y-1/2 truncate rounded-full border px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.18em] backdrop-blur transition-[left,top,transform,background-color,border-color] duration-200 ease-out hover:scale-[1.03] ${
+              aria-label={`Study marker ${index + 1}: ${part.name}`}
+              className={`group motion-label pointer-events-auto absolute grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-[0.68rem] font-bold tabular-nums text-white backdrop-blur transition-[left,top,transform,background-color,border-color] duration-150 ease-out hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 sm:h-8 sm:w-8 ${
                 selected
-                  ? "border-cyan-300/45 bg-cyan-500/18 text-white shadow-[0_0_24px_rgba(56,189,248,0.2)]"
-                  : "border-white/10 bg-slate-950/66 text-white/80 hover:bg-white/[0.08]"
+                  ? "border-cyan-200/80 bg-cyan-400 text-slate-950 shadow-[0_0_24px_rgba(56,189,248,0.5)]"
+                  : "border-white/35 bg-slate-950/80 shadow-[0_8px_18px_rgba(2,6,23,0.48)] hover:bg-slate-900"
               }`}
               style={{
                 left: layout.x,
                 top: layout.y,
-                boxShadow: `0 0 0 1px ${partInsightsColor(part.id, result)}`,
+                borderColor: selected ? undefined : partColor(part.id, result),
                 animationDelay: `${index * 46}ms`
               }}
             >
-              <span
-                className="mr-2 inline-flex h-2 w-2 rounded-full"
-                style={{ backgroundColor: partColor(part.id, result) }}
-              />
-              {part.name}
+              {index + 1}
+              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-max max-w-[min(15rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-[0.67rem] font-semibold uppercase tracking-[0.15em] text-white opacity-0 shadow-[0_14px_32px_rgba(2,6,23,0.46)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+                <span
+                  className="mr-2 inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: partColor(part.id, result) }}
+                />
+                {part.name}
+              </span>
             </button>
           );
         })}
@@ -2455,7 +2363,7 @@ function ViewerCanvas({
 
       <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex items-center justify-between gap-3">
         <div className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/55 backdrop-blur">
-          {visibleLabels.length} labels visible
+          {visibleMarkerCount} numbered markers
         </div>
         <div className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/55 backdrop-blur">
           {referenceModelState === "reference"
@@ -2472,11 +2380,6 @@ function ViewerCanvas({
 function partColor(partId: string, result: VisionExtractionResult) {
   const index = result.parts.findIndex((part) => part.id === partId);
   return palette[(index < 0 ? 0 : index) % palette.length];
-}
-
-function partInsightsColor(partId: string, result: VisionExtractionResult) {
-  const base = partColor(partId, result);
-  return `${base}55`;
 }
 
 export { AnatomyViewer };
