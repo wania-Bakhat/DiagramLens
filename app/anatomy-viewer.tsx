@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
@@ -11,11 +14,18 @@ import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import projectCustomLabelFile from "@/data/custom-labels.json";
 import {
   findAtlasOrgan,
   getAtlasMetadata,
   type AtlasOrgan
 } from "@/lib/atlas";
+import {
+  getCustomLabelModelKey,
+  normaliseCustomLabels,
+  type CustomLabel,
+  type ProjectCustomLabelFile
+} from "@/lib/custom-labels";
 import {
   tutorAdapter,
   type TutorRelatedStructure,
@@ -64,10 +74,24 @@ type PartVisual = {
 type LabelLayout = {
   x: number;
   y: number;
+  markerX: number;
+  markerY: number;
   visible: boolean;
 };
 
+type CustomLabelState = {
+  storageKey: string;
+  labels: CustomLabel[];
+};
+
 type ReferenceModelState = "loading" | "reference" | "fallback";
+type ProjectLabelSaveState = "idle" | "saving" | "saved" | "local-only";
+
+type TutorChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
 
 type ReferenceMesh = {
   mesh: InstanceType<typeof THREE.Mesh>;
@@ -100,6 +124,100 @@ function slugify(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+const projectCustomLabels = projectCustomLabelFile as unknown as ProjectCustomLabelFile;
+
+function getCustomLabelStorageKey(modelKey: string) {
+  return `diagramlens-custom-labels-v1:${modelKey}`;
+}
+
+function readCustomLabels(storageKey: string): CustomLabel[] {
+  try {
+    const storedValue = window.localStorage.getItem(storageKey);
+    if (!storedValue) {
+      return [];
+    }
+
+    return normaliseCustomLabels(JSON.parse(storedValue));
+  } catch {
+    return [];
+  }
+}
+
+function getProjectCustomLabels(modelKey: string) {
+  return normaliseCustomLabels(projectCustomLabels.models[modelKey]);
+}
+
+// A learner's wording can be more specific than the atlas's internal part
+// name. Keep these medically equivalent terms explicit so custom markers open
+// the same grounded description panel as built-in labels.
+const customLabelPartAliases: Record<string, Record<string, string>> = {
+  heart: {
+    "pulmonary-trunk": "pulmonary_artery"
+  },
+  lungs: {
+    "left-superior-lobe": "left_upper_lobe",
+    "left-inferior-lobe": "left_lower_lobe",
+    "right-superior-lobe": "right_upper_lobe",
+    "right-inferior-lobe": "right_lower_lobe",
+    apex: "lung_apex"
+  },
+  kidneys: {
+    cortex: "renal_cortex"
+  },
+  liver: {
+    "hepatic-vein": "hepatic_veins"
+  },
+  eye: {
+    // The saved marker text is preserved exactly; the study notes open the
+    // medically intended retinal-artery entry from the supplied reference.
+    "renal-arteries": "retinal_arteries"
+  },
+  pancreas: {
+    head: "pancreatic_head",
+    body: "pancreatic_body",
+    tail: "pancreatic_tail"
+  },
+  spleen: {
+    capsule: "splenic_capsule",
+    "follicels": "lymphoid_follicles"
+  },
+  "vascular-system": {
+    "pulmonary-artery": "pulmonary_arteries",
+    "lliac-vein": "common_iliac_vein"
+  },
+  skeleton: {
+    spine: "vertebral_column"
+  }
+};
+
+function getCustomLabelPartId(
+  label: CustomLabel,
+  result: VisionExtractionResult
+) {
+  const labelName = slugify(label.name);
+  const exactMatch = result.parts.find(
+    (part) => slugify(part.name) === labelName || slugify(part.id) === labelName
+  );
+
+  if (exactMatch) {
+    return exactMatch.id;
+  }
+
+  const organKey = slugify(result.organSlug ?? result.organName);
+  const aliasPartId = customLabelPartAliases[organKey]?.[labelName];
+  return result.parts.some((part) => part.id === aliasPartId)
+    ? aliasPartId
+    : null;
+}
+
+function createCustomLabelId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `label-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 // Source GLBs use different anatomy vocabularies. Keep the bridge explicit so
@@ -139,7 +257,8 @@ const referencePartAliases: Record<string, string[]> = {
   right_lower_lobe: ["lungs-r-lower-lobe"],
   renal_hilum: ["hilum-of-kidney"],
   renal_cortex: ["cortex-of-kidney", "maya-2018-cortex", "cortex"],
-  renal_medulla: ["renal-medulla", "maya-2018-medulla-pyramid", "medulla-pyramid"],
+  renal_medulla: ["renal-medulla", "medulla"],
+  renal_pyramids: ["maya-2018-medulla-pyramid", "medulla-pyramid", "renal-pyramid"],
   renal_capsule: ["kidney-capsule", "maya-2018-capsule", "capsule"],
   renal_artery: ["maya-2018-red", "renal-artery"],
   renal_vein: ["maya-2018-blue", "renal-vein"],
@@ -161,23 +280,37 @@ function findPartForReferenceObject(
     current = current.parent;
   }
 
-  return (
-    parts.find((part) => {
-      const identifiers = [
-        slugify(part.id),
-        slugify(part.name),
-        ...(referencePartAliases[part.id] ?? [])
-      ];
-      return nodeNames.some((nodeName) =>
-        identifiers.some(
-          (identifier) =>
-            nodeName === identifier ||
-            nodeName.includes(identifier) ||
-            (nodeName.length > 6 && identifier.includes(nodeName))
-        )
-      );
-    }) ?? null
-  );
+  let bestMatch: VisionPart | null = null;
+  let bestScore = 0;
+
+  for (const part of parts) {
+    const identifiers = [
+      slugify(part.id),
+      slugify(part.name),
+      ...(referencePartAliases[part.id] ?? [])
+    ];
+
+    for (const nodeName of nodeNames) {
+      for (const identifier of identifiers) {
+        let score = 0;
+
+        if (nodeName === identifier) {
+          score = 10_000 + identifier.length;
+        } else if (nodeName.includes(identifier)) {
+          score = 1_000 + identifier.length;
+        } else if (nodeName.length > 6 && identifier.includes(nodeName)) {
+          score = nodeName.length;
+        }
+
+        if (score > bestScore) {
+          bestMatch = part;
+          bestScore = score;
+        }
+      }
+    }
+  }
+
+  return bestMatch;
 }
 
 function centerReferenceModel(model: InstanceType<typeof THREE.Object3D>) {
@@ -225,9 +358,250 @@ function labelLayoutsChanged(
       !before ||
       before.visible !== after.visible ||
       Math.abs(before.x - after.x) > 1.5 ||
-      Math.abs(before.y - after.y) > 1.5
+      Math.abs(before.y - after.y) > 1.5 ||
+      Math.abs(before.markerX - after.markerX) > 1.5 ||
+      Math.abs(before.markerY - after.markerY) > 1.5
     );
   });
+}
+
+type MarkerCandidate = {
+  id: string;
+  x: number;
+  y: number;
+};
+
+// Normalized anatomical targets for models whose GLB nodes do not retain a
+// separate mesh name for every structure. The ray is cast through each target
+// and snaps to the actual model surface, so the dot remains attached as the
+// model turns while still pointing to the correct anatomical region.
+const referenceAnchorHints: Record<string, Record<string, [number, number, number]>> = {
+  heart: {
+    left_atrium: [0.34, 0.34, 0.7],
+    right_atrium: [-0.38, 0.3, 0.7],
+    left_ventricle: [0.28, -0.34, 0.82],
+    right_ventricle: [-0.24, -0.26, 0.86],
+    mitral_valve: [0.13, 0.08, 0.9],
+    tricuspid_valve: [-0.14, 0.04, 0.9],
+    pulmonary_valve: [-0.05, 0.5, 0.86],
+    aortic_valve: [0.14, 0.58, 0.8],
+    aorta: [0.14, 0.86, 0.58],
+    myocardium: [0, -0.08, 0.94],
+    superior_vena_cava: [-0.42, 0.72, 0.6],
+    inferior_vena_cava: [-0.38, -0.32, 0.48],
+    pulmonary_artery: [0.05, 0.62, 0.84],
+    pulmonary_veins: [0.5, 0.34, 0.62],
+    interventricular_septum: [0.02, -0.22, 0.9],
+    coronary_arteries: [0.1, -0.02, 0.98]
+  },
+  lungs: {
+    trachea: [0, 0.9, 0.56],
+    bronchi: [0, 0.28, 0.78],
+    carina: [0, 0.38, 0.82],
+    right_lung: [-0.48, -0.02, 0.76],
+    left_lung: [0.48, -0.02, 0.76],
+    right_upper_lobe: [-0.48, 0.32, 0.82],
+    right_middle_lobe: [-0.52, -0.04, 0.9],
+    right_lower_lobe: [-0.45, -0.42, 0.8],
+    left_upper_lobe: [0.46, 0.28, 0.82],
+    left_lower_lobe: [0.45, -0.36, 0.82],
+    alveoli: [0.42, -0.16, 0.96],
+    diaphragm: [0, -0.72, 0.62]
+  },
+  brain: {
+    cerebrum: [0, 0.3, 0.76],
+    frontal_lobe: [0.62, 0.28, 0.72],
+    parietal_lobe: [0.02, 0.76, 0.68],
+    temporal_lobe: [0.28, -0.12, 0.86],
+    occipital_lobe: [-0.66, 0.22, 0.64],
+    cerebellum: [-0.58, -0.36, 0.68],
+    brainstem: [-0.1, -0.54, 0.48],
+    spinal_cord: [-0.08, -0.9, 0.3],
+    corpus_callosum: [0.02, 0.18, 0.94],
+    thalamus: [-0.02, 0.02, 0.96],
+    hypothalamus: [0.02, -0.18, 0.96],
+    hippocampus: [0.3, -0.18, 0.9],
+    pituitary_gland: [0.06, -0.4, 0.86]
+  },
+  kidneys: {
+    renal_artery: [-0.16, 0.02, 0.82],
+    renal_vein: [0.14, 0.02, 0.82],
+    renal_capsule: [-0.58, 0.18, 0.76],
+    renal_cortex: [0.52, 0.18, 0.86],
+    renal_medulla: [0.44, 0.02, 0.94],
+    renal_pyramids: [0.42, -0.18, 0.94],
+    ureter: [0.38, -0.58, 0.65]
+  },
+  liver: {
+    right_lobe: [-0.48, 0.08, 0.8],
+    left_lobe: [0.52, 0.1, 0.8],
+    falciform_ligament: [0.02, 0.18, 0.98],
+    gallbladder: [-0.16, -0.46, 0.74],
+    portal_vein: [-0.12, -0.3, 0.86],
+    hepatic_duct: [-0.04, -0.5, 0.86],
+    common_bile_duct: [-0.02, -0.68, 0.82],
+    hepatic_artery: [-0.22, -0.3, 0.9],
+    hepatic_veins: [0.06, 0.32, 0.76],
+    caudate_lobe: [-0.22, 0.18, -0.7],
+    quadrate_lobe: [-0.12, -0.28, 0.82]
+  },
+  eye: {
+    cornea: [0.94, 0.04, 0.2],
+    iris: [0.7, 0.02, 0.36],
+    pupil: [0.76, 0.02, 0.42],
+    lens: [0.38, 0.02, 0.4],
+    aqueous_humor: [0.54, 0.12, 0.46],
+    vitreous_body: [-0.14, 0.08, 0.56],
+    retina: [-0.64, 0.04, 0.34],
+    choroid: [-0.7, 0.08, 0.3],
+    sclera: [-0.1, 0.42, 0.82],
+    optic_nerve: [-0.96, 0.04, 0.08]
+  },
+  pancreas: {
+    pancreatic_head: [-0.76, -0.1, 0.72],
+    pancreatic_neck: [-0.36, -0.02, 0.8],
+    pancreatic_body: [0.1, 0.04, 0.84],
+    pancreatic_tail: [0.76, 0.12, 0.76],
+    pancreatic_duct: [0.08, -0.02, 0.98],
+    islets_of_langerhans: [0.3, 0.16, 0.92],
+    duodenum: [-0.9, -0.28, 0.58]
+  },
+  "digestive-system": {
+    liver: [-0.16, 0.62, 0.82],
+    pancreas: [0, 0.22, 0.8],
+    small_intestine: [0, -0.22, 0.94],
+    large_intestine: [0, -0.14, 0.72],
+    bile_pathway: [-0.14, 0.36, 0.94]
+  },
+  spleen: {
+    spleen: [0, 0.04, 0.88],
+    splenic_capsule: [0.18, 0.34, 0.92],
+    white_pulp: [0.22, 0.02, 0.96],
+    red_pulp: [-0.16, -0.16, 0.94],
+    splenic_hilum: [-0.78, 0.02, 0.76]
+  },
+  "vascular-system": {
+    aorta: [0.04, 0.18, 0.8],
+    superior_vena_cava: [-0.1, 0.42, 0.74],
+    inferior_vena_cava: [-0.1, -0.22, 0.7],
+    pulmonary_arteries: [-0.22, 0.22, 0.88],
+    pulmonary_veins: [0.22, 0.2, 0.86]
+  },
+  skeleton: {
+    skull: [0, 0.9, 0.66],
+    vertebral_column: [0, 0.12, 0.34],
+    rib_cage: [0, 0.42, 0.76],
+    pelvis: [0, -0.14, 0.72],
+    femur: [0.24, -0.54, 0.62],
+    humerus: [0.5, 0.38, 0.62]
+  },
+  "human-body": {
+    skeletal_system: [-0.26, 0.14, 0.86],
+    circulatory_system: [0, 0.2, 0.9],
+    digestive_system: [0, -0.04, 0.92],
+    respiratory_system: [0, 0.36, 0.92],
+    urinary_system: [0, -0.18, 0.88]
+  }
+};
+
+function getReferenceAnchorDirection(
+  result: VisionExtractionResult,
+  partId: string,
+  model: InstanceType<typeof THREE.Object3D>,
+  modelLocalBounds: InstanceType<typeof THREE.Box3>,
+  modelCenter: InstanceType<typeof THREE.Vector3>,
+  fallbackDirection: InstanceType<typeof THREE.Vector3>
+) {
+  const organKey = slugify(result.organSlug ?? result.organName);
+  const hint = referenceAnchorHints[organKey]?.[partId];
+
+  if (!hint) {
+    return fallbackDirection;
+  }
+
+  const localCenter = modelLocalBounds.getCenter(new THREE.Vector3());
+  const localSize = modelLocalBounds.getSize(new THREE.Vector3());
+  const targetPoint = localCenter
+    .add(
+      new THREE.Vector3(
+        hint[0] * localSize.x * 0.5,
+        hint[1] * localSize.y * 0.5,
+        hint[2] * localSize.z * 0.5
+      )
+    );
+
+  return model.localToWorld(targetPoint).sub(modelCenter).normalize();
+}
+
+// Markers stay on their anatomical surface targets. When two points project
+// onto the same screen position, only those nearby number badges are offset;
+// a thin connector retains the exact target location without covering it.
+function arrangeNumberMarkers(
+  candidates: MarkerCandidate[],
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  const layouts = new Map<string, Pick<LabelLayout, "markerX" | "markerY">>();
+  const placed: Array<{ x: number; y: number }> = [];
+  const edgePadding = 18;
+  const minimumDistance = 27;
+
+  for (const candidate of candidates) {
+    let markerX = candidate.x;
+    let markerY = candidate.y;
+    let placedMarker = false;
+    let clearestPosition = { x: markerX, y: markerY };
+    let greatestClearance = placed.length === 0 ? Number.POSITIVE_INFINITY : -1;
+
+    for (let ring = 0; ring <= 10 && !placedMarker; ring += 1) {
+      const radius = ring * 24;
+      const steps = ring === 0 ? 1 : Math.max(12, ring * 4);
+
+      for (let step = 0; step < steps; step += 1) {
+        const angle = ring === 0 ? 0 : (step / steps) * Math.PI * 2 - Math.PI / 2;
+        const nextX = THREE.MathUtils.clamp(
+          candidate.x + Math.cos(angle) * radius,
+          edgePadding,
+          viewportWidth - edgePadding
+        );
+        const nextY = THREE.MathUtils.clamp(
+          candidate.y + Math.sin(angle) * radius,
+          edgePadding,
+          viewportHeight - edgePadding
+        );
+        const clearance = placed.length
+          ? Math.min(
+              ...placed.map((marker) => Math.hypot(marker.x - nextX, marker.y - nextY))
+            )
+          : Number.POSITIVE_INFINITY;
+
+        if (clearance > greatestClearance) {
+          clearestPosition = { x: nextX, y: nextY };
+          greatestClearance = clearance;
+        }
+
+        if (clearance >= minimumDistance) {
+          markerX = nextX;
+          markerY = nextY;
+          placedMarker = true;
+          break;
+        }
+      }
+    }
+
+    // A very dense projection (for example, vessels seen end-on) can fill
+    // the local spiral. Use its clearest point rather than reusing a visible
+    // number position.
+    if (!placedMarker) {
+      markerX = clearestPosition.x;
+      markerY = clearestPosition.y;
+    }
+
+    placed.push({ x: markerX, y: markerY });
+    layouts.set(candidate.id, { markerX, markerY });
+  }
+
+  return layouts;
 }
 
 function makePlacement(
@@ -329,7 +703,7 @@ function buildFallbackTutorResponse(
   return {
     provider: "mock",
     explanation:
-      `${part.name} is a landmark in the ${organ.organName.toLowerCase()} diagram. ` +
+      `${part.name} is a labelled structure in the ${organ.organName.toLowerCase()} diagram. ` +
       `${part.description} Start here to orient the rest of the labels.`,
     function: part.function,
     relatedStructures,
@@ -953,48 +1327,6 @@ function buildPartVisuals(result: VisionExtractionResult) {
   });
 }
 
-function buildRelationshipLines(
-  result: VisionExtractionResult,
-  visuals: PartVisual[]
-) {
-  const visualById = new Map(visuals.map((visual) => [visual.part.id, visual]));
-
-  return result.relationships.flatMap((relationship) => {
-    const source = visualById.get(relationship.sourcePartId);
-    const target = visualById.get(relationship.targetPartId);
-
-    if (!source || !target) {
-      return [];
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array(6), 3)
-    );
-
-    const material = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.14
-    });
-
-    const line = new THREE.Line(geometry, material);
-    line.userData.sourceId = relationship.sourcePartId;
-    line.userData.targetId = relationship.targetPartId;
-    line.userData.relation = relationship.relation;
-
-    return [
-      {
-        line,
-        source,
-        target,
-        material
-      }
-    ];
-  });
-}
-
 function disposeObject3D(object: any) {
   object.traverse((child: any) => {
     const mesh = child as any;
@@ -1013,6 +1345,398 @@ function disposeObject3D(object: any) {
 
 function formatAccuracy(confidence: number) {
   return `${Math.round(confidence * 100)}% confidence`;
+}
+
+function createTutorChatMessage(
+  role: TutorChatMessage["role"],
+  content: string
+): TutorChatMessage {
+  return {
+    id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content
+  };
+}
+
+function renderTutorInline(text: string): ReactNode[] {
+  return text
+    .split(/(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`)/g)
+    .filter(Boolean)
+    .map((segment, index) => {
+      if (
+        (segment.startsWith("**") && segment.endsWith("**")) ||
+        (segment.startsWith("__") && segment.endsWith("__"))
+      ) {
+        return (
+          <strong key={index} className="font-semibold text-cyan-50">
+            {segment.slice(2, -2)}
+          </strong>
+        );
+      }
+
+      if (segment.startsWith("`") && segment.endsWith("`")) {
+        return (
+          <code
+            key={index}
+            className="rounded bg-slate-950/75 px-1.5 py-0.5 font-mono text-[0.86em] text-cyan-100"
+          >
+            {segment.slice(1, -1)}
+          </code>
+        );
+      }
+
+      return segment;
+    });
+}
+
+function isTutorHeading(line: string) {
+  return /^(#{1,3})\s+(.+)$/.test(line);
+}
+
+function isTutorBullet(line: string) {
+  return /^\s*[-*+]\s+(.+)$/.test(line);
+}
+
+function isTutorOrderedItem(line: string) {
+  return /^\s*\d+[.)]\s+(.+)$/.test(line);
+}
+
+function TutorMarkdown({ content }: { content: string }) {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const blocks: ReactNode[] = [];
+  let lineIndex = 0;
+
+  while (lineIndex < lines.length) {
+    const line = lines[lineIndex].trim();
+
+    if (!line) {
+      lineIndex += 1;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const className =
+        level === 1
+          ? "pt-1 text-lg font-semibold tracking-[-0.02em] text-white"
+          : level === 2
+            ? "pt-2 text-base font-semibold text-white"
+            : "pt-2 text-sm font-semibold text-cyan-50";
+      const Heading = (level === 1 ? "h2" : level === 2 ? "h3" : "h4") as
+        | "h2"
+        | "h3"
+        | "h4";
+
+      blocks.push(
+        <Heading key={`heading-${lineIndex}`} className={className}>
+          {renderTutorInline(heading[2])}
+        </Heading>
+      );
+      lineIndex += 1;
+      continue;
+    }
+
+    if (isTutorBullet(line) || isTutorOrderedItem(line)) {
+      const ordered = isTutorOrderedItem(line);
+      const itemMatcher = ordered
+        ? /^\s*\d+[.)]\s+(.+)$/
+        : /^\s*[-*+]\s+(.+)$/;
+      const items: string[] = [];
+
+      while (lineIndex < lines.length) {
+        const nextLine = lines[lineIndex].trim();
+        const item = nextLine.match(itemMatcher);
+
+        if (item) {
+          items.push(item[1]);
+          lineIndex += 1;
+          continue;
+        }
+
+        if (!nextLine || isTutorHeading(nextLine) || (ordered ? isTutorBullet(nextLine) : isTutorOrderedItem(nextLine))) {
+          break;
+        }
+
+        if (items.length) {
+          items[items.length - 1] = `${items[items.length - 1]} ${nextLine}`;
+          lineIndex += 1;
+          continue;
+        }
+
+        break;
+      }
+
+      const List = (ordered ? "ol" : "ul") as "ol" | "ul";
+      blocks.push(
+        <List
+          key={`list-${lineIndex}-${ordered ? "ordered" : "bullet"}`}
+          className={`space-y-1.5 pl-5 leading-7 text-white/80 marker:text-cyan-200/75 ${
+            ordered ? "list-decimal" : "list-disc"
+          }`}
+        >
+          {items.map((item, itemIndex) => (
+            <li key={`${itemIndex}-${item}`}>{renderTutorInline(item)}</li>
+          ))}
+        </List>
+      );
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (lineIndex < lines.length) {
+      const nextLine = lines[lineIndex].trim();
+      if (!nextLine) {
+        lineIndex += 1;
+        break;
+      }
+
+      if (isTutorHeading(nextLine) || isTutorBullet(nextLine) || isTutorOrderedItem(nextLine)) {
+        break;
+      }
+
+      paragraph.push(nextLine);
+      lineIndex += 1;
+    }
+
+    if (paragraph.length) {
+      blocks.push(
+        <p key={`paragraph-${lineIndex}`} className="leading-7 text-white/80">
+          {renderTutorInline(paragraph.join(" "))}
+        </p>
+      );
+    }
+  }
+
+  return <div className="space-y-3">{blocks}</div>;
+}
+
+type TutorChatPanelProps = {
+  fullscreen: boolean;
+  organName: string;
+  selectedPartName: string | null;
+  messages: TutorChatMessage[];
+  suggestedQuestions: string[];
+  input: string;
+  loading: boolean;
+  error: string | null;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  onInputChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onAskQuestion: (question: string) => void;
+  onClear: () => void;
+  onToggleFullscreen: () => void;
+  onClose: () => void;
+};
+
+function TutorChatPanel({
+  fullscreen,
+  organName,
+  selectedPartName,
+  messages,
+  suggestedQuestions,
+  input,
+  loading,
+  error,
+  scrollContainerRef,
+  onInputChange,
+  onSubmit,
+  onAskQuestion,
+  onClear,
+  onToggleFullscreen,
+  onClose
+}: TutorChatPanelProps) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputId = fullscreen
+    ? "diagram-tutor-question-fullscreen"
+    : "diagram-tutor-question";
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [fullscreen]);
+
+  return (
+    <section
+      role="dialog"
+      aria-modal="true"
+      aria-label="DiagramLens AI Tutor"
+      className={
+        fullscreen
+          ? "fixed inset-0 z-[80] flex min-h-[100dvh] bg-[#02050b]/98 p-3 text-white backdrop-blur-2xl sm:p-6"
+          : "absolute inset-0 z-20 flex min-h-0 flex-col bg-[#09111f] p-4 text-white shadow-[20px_0_60px_rgba(0,0,0,0.34)]"
+      }
+    >
+      <div
+        className={
+          fullscreen
+            ? "mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#09111f] p-4 shadow-[0_28px_100px_rgba(0,0,0,0.48)] sm:p-6"
+            : "flex min-h-0 flex-1 flex-col"
+        }
+      >
+        <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-100/65">
+                Groq AI Tutor
+              </p>
+              <span className="rounded-full border border-cyan-300/20 bg-cyan-500/[0.08] px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-cyan-100/75">
+                Diagram-aware
+              </span>
+            </div>
+            <h2 className="mt-2 truncate text-xl font-semibold tracking-[-0.02em] text-white">
+              {selectedPartName ?? organName}
+            </h2>
+            <p className="mt-1 text-sm text-white/45">
+              {selectedPartName
+                ? `Answers are focused on ${selectedPartName} in this diagram.`
+                : `Ask about the labelled structures in this ${organName.toLowerCase()} diagram.`}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {messages.length ? (
+              <button
+                type="button"
+                onClick={onClear}
+                className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/65 transition hover:bg-white/[0.07]"
+              >
+                New chat
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              className="rounded-full border border-cyan-300/25 bg-cyan-500/[0.08] px-3 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-500/[0.16]"
+            >
+              {fullscreen ? "Minimize" : "Full screen"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/[0.07]"
+            >
+              Close
+            </button>
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            ref={scrollContainerRef}
+            data-lenis-prevent
+            className={`min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain py-5 pr-1 ${
+              fullscreen ? "sm:px-2" : ""
+            }`}
+          >
+            <div className={`mx-auto w-full space-y-4 ${fullscreen ? "max-w-3xl" : ""}`}>
+              {messages.length ? (
+                messages.map((message) => (
+                  <article
+                    key={message.id}
+                    className={`rounded-2xl border px-4 py-3.5 text-[0.95rem] leading-7 shadow-[0_12px_30px_rgba(2,6,23,0.16)] ${
+                      message.role === "user"
+                        ? "ml-auto max-w-[88%] border-cyan-300/30 bg-cyan-500/10 text-cyan-50"
+                        : "mr-auto max-w-[96%] border-white/10 bg-white/[0.045] text-white/85"
+                    }`}
+                  >
+                    <p className="mb-2 text-[0.63rem] font-semibold uppercase tracking-[0.22em] text-white/40">
+                      {message.role === "user" ? "You" : "Tutor"}
+                    </p>
+                    {message.role === "user" ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <TutorMarkdown content={message.content} />
+                    )}
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+                  <p className="text-sm leading-7 text-white/70">
+                    Ask a question and get a clear, study-friendly explanation of the current anatomy diagram.
+                  </p>
+                  <p className="mt-5 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
+                    Try a question
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {suggestedQuestions.map((question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        onClick={() => onAskQuestion(question)}
+                        disabled={loading}
+                        className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-3 text-left text-sm leading-6 text-white/80 transition hover:border-cyan-300/25 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {question}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {error ? (
+                <div role="alert" className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3.5 py-3 text-sm leading-6 text-amber-50">
+                  {error}
+                </div>
+              ) : null}
+
+              {loading ? (
+                <div className="mr-auto max-w-[96%] rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3.5" aria-live="polite">
+                  <p className="text-[0.63rem] font-semibold uppercase tracking-[0.22em] text-white/40">Tutor</p>
+                  <div className="mt-3 flex gap-1.5" aria-label="Tutor is thinking">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70 [animation-delay:-0.2s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70 [animation-delay:-0.1s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70" />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <form
+            onSubmit={onSubmit}
+            className={`shrink-0 border-t border-white/10 pt-3 ${
+              fullscreen ? "pb-[env(safe-area-inset-bottom)] sm:px-2" : ""
+            }`}
+          >
+            <div className={`mx-auto w-full ${fullscreen ? "max-w-3xl" : ""}`}>
+              <label className="sr-only" htmlFor={inputId}>
+                Ask the AI tutor a question
+              </label>
+              <textarea
+                ref={inputRef}
+                id={inputId}
+                value={input}
+                onChange={(event) => onInputChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    onAskQuestion(input);
+                  }
+                }}
+                disabled={loading}
+                maxLength={1_200}
+                rows={fullscreen ? 3 : 2}
+                placeholder={`Ask about ${selectedPartName ?? organName}...`}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-slate-950/55 px-3.5 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/50 focus:ring-2 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-[0.65rem] leading-4 text-white/35">
+                  For learning only—not personal medical advice.
+                </p>
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? "Thinking…" : "Send"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function SearchIcon() {
@@ -1079,23 +1803,58 @@ function AnatomyViewer({
   const [explode, setExplode] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const [isTutorFullscreen, setIsTutorFullscreen] = useState(false);
   const [viewReset, setViewReset] = useState(0);
   const [tutorResponse, setTutorResponse] = useState<TutorResponse | null>(null);
   const [tutorLoading, setTutorLoading] = useState(false);
   const [tutorError, setTutorError] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<TutorChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatRequestRef = useRef<AbortController | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    chatRequestRef.current?.abort();
+    chatRequestRef.current = null;
     setSearchTerm("");
     setSelectedPartId(null);
     setHiddenPartIds(new Set());
     setExplode(false);
     setIsInfoOpen(false);
     setIsTutorOpen(false);
+    setIsTutorFullscreen(false);
+    setChatMessages([]);
+    setChatInput("");
+    setChatLoading(false);
+    setChatError(null);
   }, [result.organName, result.sourceFileName, result.parts.length]);
 
   useEffect(() => {
     setPortalTarget(document.body);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      chatRequestRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTutorFullscreen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsTutorFullscreen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTutorFullscreen]);
 
   const partInsights = buildPartInsights(result);
   const activeOrgan = findAtlasOrgan(result.organSlug ?? result.organName);
@@ -1161,6 +1920,101 @@ function AnatomyViewer({
   const tutorContent = selectedPart
     ? tutorResponse ?? buildFallbackTutorResponse(activeOrgan, selectedPart)
     : null;
+
+  useEffect(() => {
+    if (isTutorOpen) {
+      chatScrollRef.current?.scrollTo({
+        top: chatScrollRef.current.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [chatLoading, chatMessages.length, isTutorFullscreen, isTutorOpen]);
+
+  async function sendTutorQuestion(rawQuestion: string) {
+    const question = rawQuestion.trim();
+    if (!question || chatLoading) {
+      return;
+    }
+
+    const userMessage = createTutorChatMessage("user", question);
+    const nextMessages = [...chatMessages, userMessage].slice(-8);
+    const controller = new AbortController();
+
+    chatRequestRef.current?.abort();
+    chatRequestRef.current = controller;
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setChatLoading(true);
+    setChatError(null);
+
+    try {
+      const response = await fetch("/api/diagram-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organSlug: activeOrgan.slug,
+          selectedPartId: selectedPart?.id ?? null,
+          messages: nextMessages.map(({ role, content }) => ({ role, content }))
+        }),
+        signal: controller.signal
+      });
+      const data = (await response.json().catch(() => null)) as {
+        reply?: unknown;
+        error?: unknown;
+      } | null;
+      const reply = data?.reply;
+
+      if (!response.ok || typeof reply !== "string") {
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "The AI tutor could not answer that right now."
+        );
+      }
+
+      setChatMessages((previous) => [
+        ...previous,
+        createTutorChatMessage("assistant", reply.trim())
+      ].slice(-10));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setChatError(
+          error instanceof Error
+            ? error.message
+            : "The AI tutor could not answer that right now."
+        );
+      }
+    } finally {
+      if (chatRequestRef.current === controller) {
+        chatRequestRef.current = null;
+        setChatLoading(false);
+      }
+    }
+  }
+
+  function submitTutorQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendTutorQuestion(chatInput);
+  }
+
+  const suggestedTutorQuestions = tutorContent?.quizQuestions ?? [
+    `What should I notice first in the ${result.organName.toLowerCase()}?`,
+    `How do the major structures of the ${result.organName.toLowerCase()} work together?`
+  ];
+
+  function clearTutorChat() {
+    chatRequestRef.current?.abort();
+    chatRequestRef.current = null;
+    setChatMessages([]);
+    setChatInput("");
+    setChatLoading(false);
+    setChatError(null);
+  }
+
+  function closeTutorChat() {
+    setIsTutorOpen(false);
+    setIsTutorFullscreen(false);
+  }
 
   function toggleVisibility(partId: string) {
     setHiddenPartIds((previous) => {
@@ -1286,50 +2140,34 @@ function AnatomyViewer({
           <div className="shrink-0 border-t border-white/10 p-4">
             <button
               type="button"
-              onClick={() => setIsTutorOpen(true)}
+              onClick={() => {
+                setIsTutorFullscreen(false);
+                setIsTutorOpen(true);
+              }}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-50"
             >
               Ask AI Tutor
             </button>
           </div>
 
-          {isTutorOpen ? (
-            <div className="absolute inset-0 z-20 flex flex-col bg-[#09111f] p-4 shadow-[20px_0_60px_rgba(0,0,0,0.34)]">
-              <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div>
-                  <p className="text-xs font-medium text-cyan-100/65">AI Tutor</p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {selectedPart ? selectedPart.name : result.organName}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsTutorOpen(false)}
-                  className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/[0.07]"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto py-5">
-                <p className="text-sm leading-7 text-white/65">
-                  Ask about the selected anatomy. The tutor is already using the current organ and structure as context.
-                </p>
-                <div className="mt-5 space-y-2">
-                  {(tutorContent?.quizQuestions ?? [
-                    `What should I notice first in the ${result.organName.toLowerCase()}?`,
-                    `How do the major structures of the ${result.organName.toLowerCase()} work together?`
-                  ]).map((question) => (
-                    <button
-                      key={question}
-                      type="button"
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left text-sm leading-6 text-white/80 transition hover:bg-white/[0.08]"
-                    >
-                      {question}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {isTutorOpen && !isTutorFullscreen ? (
+            <TutorChatPanel
+              fullscreen={false}
+              organName={result.organName}
+              selectedPartName={selectedPart?.name ?? null}
+              messages={chatMessages}
+              suggestedQuestions={suggestedTutorQuestions}
+              input={chatInput}
+              loading={chatLoading}
+              error={chatError}
+              scrollContainerRef={chatScrollRef}
+              onInputChange={setChatInput}
+              onSubmit={submitTutorQuestion}
+              onAskQuestion={(question) => void sendTutorQuestion(question)}
+              onClear={clearTutorChat}
+              onToggleFullscreen={() => setIsTutorFullscreen(true)}
+              onClose={closeTutorChat}
+            />
           ) : null}
         </aside>
 
@@ -1395,6 +2233,26 @@ function AnatomyViewer({
       </div>
     </section>
   );
+
+  const fullScreenTutorTree = isTutorOpen && isTutorFullscreen ? (
+    <TutorChatPanel
+      fullscreen
+      organName={result.organName}
+      selectedPartName={selectedPart?.name ?? null}
+      messages={chatMessages}
+      suggestedQuestions={suggestedTutorQuestions}
+      input={chatInput}
+      loading={chatLoading}
+      error={chatError}
+      scrollContainerRef={chatScrollRef}
+      onInputChange={setChatInput}
+      onSubmit={submitTutorQuestion}
+      onAskQuestion={(question) => void sendTutorQuestion(question)}
+      onClear={clearTutorChat}
+      onToggleFullscreen={() => setIsTutorFullscreen(false)}
+      onClose={closeTutorChat}
+    />
+  ) : null;
 
   const viewerTree = (
     <section className={viewerShellClassName || undefined}>
@@ -1540,7 +2398,7 @@ function AnatomyViewer({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.28em] text-white/[0.45]">
-                      AI tutor
+                      Study notes
                     </p>
                     <h3 className="mt-2 text-lg font-semibold text-white">
                       {selectedPart?.name ?? "Select a part to begin"}
@@ -1552,7 +2410,7 @@ function AnatomyViewer({
                     </p>
                   </div>
                   <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.65rem] uppercase tracking-[0.22em] text-white/60">
-                    {tutorLoading ? "Loading" : "Mock fallback"}
+                    {tutorLoading ? "Loading" : "Atlas notes"}
                   </span>
                 </div>
 
@@ -1773,10 +2631,21 @@ function AnatomyViewer({
   );
 
   if (fullscreen && portalTarget) {
-    return createPortal(immersiveTree, portalTarget);
+    return createPortal(
+      <>
+        {immersiveTree}
+        {fullScreenTutorTree}
+      </>,
+      portalTarget
+    );
   }
 
-  return viewerTree;
+  return (
+    <>
+      {viewerTree}
+      {fullScreenTutorTree}
+    </>
+  );
 }
 
 function ViewerCanvas({
@@ -1793,30 +2662,115 @@ function ViewerCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [labelLayouts, setLabelLayouts] = useState<Record<string, LabelLayout>>({});
   const labelLayoutsRef = useRef<Record<string, LabelLayout>>({});
+  const [customLabelLayouts, setCustomLabelLayouts] = useState<
+    Record<string, LabelLayout>
+  >({});
+  const customLabelLayoutsRef = useRef<Record<string, LabelLayout>>({});
+  const [showStructureList, setShowStructureList] = useState(false);
+  const [isLabelEditorOpen, setIsLabelEditorOpen] = useState(false);
+  const [isAddingCustomLabel, setIsAddingCustomLabel] = useState(false);
+  const [draftLabelPosition, setDraftLabelPosition] = useState<
+    [number, number, number] | null
+  >(null);
+  const [draftLabelName, setDraftLabelName] = useState("");
+  const [labelEditorError, setLabelEditorError] = useState<string | null>(null);
+  const [customLabelState, setCustomLabelState] = useState<CustomLabelState>({
+    storageKey: "",
+    labels: []
+  });
+  const [projectLabelSaveState, setProjectLabelSaveState] =
+    useState<ProjectLabelSaveState>("idle");
   const [referenceModelState, setReferenceModelState] =
     useState<ReferenceModelState>(() =>
       result.atlasMetadata?.referenceAssetUrl ? "loading" : "fallback"
     );
+  const customLabelModelKey = getCustomLabelModelKey(result);
+  const customLabelStorageKey = getCustomLabelStorageKey(customLabelModelKey);
+  const customLabels =
+    customLabelState.storageKey === customLabelStorageKey
+      ? customLabelState.labels
+      : [];
+  const draftLabel = draftLabelPosition
+    ? {
+        id: "draft-custom-label",
+        name: draftLabelName.trim() || "New label",
+        position: draftLabelPosition
+      }
+    : null;
+  const displayCustomLabels = draftLabel
+    ? [...customLabels, draftLabel]
+    : customLabels;
+  const customLabelsRef = useRef<CustomLabel[]>(displayCustomLabels);
+  const projectSaveRequestRef = useRef(0);
+  const labelEditorRef = useRef({ isAddingCustomLabel });
   const interactionRef = useRef({
     searchTerm,
     selectedPartId,
     hiddenPartIds,
-    explode
+    explode,
+    isAddingCustomLabel
   });
+
+  useEffect(() => {
+    customLabelsRef.current = displayCustomLabels;
+  }, [displayCustomLabels]);
+
+  useEffect(() => {
+    labelEditorRef.current = { isAddingCustomLabel };
+  }, [isAddingCustomLabel]);
 
   useEffect(() => {
     interactionRef.current = {
       searchTerm,
       selectedPartId,
       hiddenPartIds,
-      explode
+      explode,
+      isAddingCustomLabel
     };
-  }, [searchTerm, selectedPartId, hiddenPartIds, explode]);
+  }, [searchTerm, selectedPartId, hiddenPartIds, explode, isAddingCustomLabel]);
+
+  useEffect(() => {
+    projectSaveRequestRef.current += 1;
+    const projectLabels = getProjectCustomLabels(customLabelModelKey);
+    const localLabels = readCustomLabels(customLabelStorageKey);
+    setCustomLabelState({
+      storageKey: customLabelStorageKey,
+      // The committed project file is the source of truth for everyone who
+      // downloads the repository. Local storage only carries labels when a
+      // model has not been published into that file yet.
+      labels: projectLabels.length ? projectLabels : localLabels
+    });
+    setProjectLabelSaveState(projectLabels.length ? "saved" : "idle");
+    setIsLabelEditorOpen(false);
+    setIsAddingCustomLabel(false);
+    setDraftLabelPosition(null);
+    setDraftLabelName("");
+    setLabelEditorError(null);
+    customLabelLayoutsRef.current = {};
+    setCustomLabelLayouts({});
+  }, [customLabelModelKey, customLabelStorageKey]);
+
+  useEffect(() => {
+    if (customLabelState.storageKey !== customLabelStorageKey) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        customLabelStorageKey,
+        JSON.stringify(customLabelState.labels)
+      );
+    } catch {
+      // The editor continues for the current visit even if browser storage is
+      // unavailable (for example, in a private or storage-restricted tab).
+    }
+  }, [customLabelState, customLabelStorageKey]);
 
   useEffect(() => {
     setReferenceModelState(
       result.atlasMetadata?.referenceAssetUrl ? "loading" : "fallback"
     );
+    setShowStructureList(false);
   }, [result.atlasMetadata?.referenceAssetUrl, result.sourceFileName]);
 
   useEffect(() => {
@@ -1828,6 +2782,8 @@ function ViewerCanvas({
 
     labelLayoutsRef.current = {};
     setLabelLayouts({});
+    customLabelLayoutsRef.current = {};
+    setCustomLabelLayouts({});
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#050816");
@@ -1889,14 +2845,9 @@ function ViewerCanvas({
     scene.add(rimLight);
 
     const visuals = buildPartVisuals(result);
-    const lines = buildRelationshipLines(result, visuals);
 
     for (const visual of visuals) {
       root.add(visual.object);
-    }
-
-    for (const relation of lines) {
-      root.add(relation.line);
     }
 
     const bounds = new THREE.Box3();
@@ -1932,7 +2883,7 @@ function ViewerCanvas({
     >();
     const referencePartMeshes = new Map<
       string,
-      InstanceType<typeof THREE.Mesh>
+      InstanceType<typeof THREE.Mesh>[]
     >();
     const referenceMeshes: ReferenceMesh[] = [];
     let referenceModelLoaded = false;
@@ -1968,6 +2919,10 @@ function ViewerCanvas({
           }
 
           centerReferenceModel(assembledReferenceModel);
+          const modelLocalBounds = new THREE.Box3().setFromObject(assembledReferenceModel);
+          referenceModelRoot.add(assembledReferenceModel);
+          root.updateMatrixWorld(true);
+
           assembledReferenceModel.traverse((object: InstanceType<typeof THREE.Object3D>) => {
             const candidate = object as InstanceType<typeof THREE.Mesh>;
             if (!candidate.isMesh) {
@@ -1977,8 +2932,10 @@ function ViewerCanvas({
             const part = findPartForReferenceObject(object, result.parts);
             candidate.userData.partId = part?.id;
 
-            if (part && !referencePartMeshes.has(part.id)) {
-              referencePartMeshes.set(part.id, candidate);
+            if (part) {
+              const meshes = referencePartMeshes.get(part.id) ?? [];
+              meshes.push(candidate);
+              referencePartMeshes.set(part.id, meshes);
             }
 
             // Leave every authored material and texture exactly as supplied by
@@ -1992,9 +2949,9 @@ function ViewerCanvas({
 
           // Raycast every study structure to an exposed surface. Matched GLB
           // meshes get their own surface point; generic meshes use the full
-          // model. This avoids markers being anchored at a mesh origin hidden
+          // model. This avoids labels being anchored at a mesh origin hidden
           // inside the organ.
-          assembledReferenceModel.updateMatrixWorld(true);
+          root.updateMatrixWorld(true);
           const modelBounds = new THREE.Box3().setFromObject(assembledReferenceModel);
           const modelCenter = modelBounds.getCenter(new THREE.Vector3());
           const modelSize = modelBounds.getSize(new THREE.Vector3());
@@ -2002,31 +2959,45 @@ function ViewerCanvas({
           const anchorRaycaster = new THREE.Raycaster();
 
           for (const visual of visuals) {
-            const direction = visual.placement.basePosition
+            const fallbackDirection = visual.placement.basePosition
               .clone()
               .sub(center)
               .normalize();
-            if (direction.lengthSq() < 0.001) {
-              direction.set(0, 0.2, 1).normalize();
+            if (fallbackDirection.lengthSq() < 0.001) {
+              fallbackDirection.set(0, 0.2, 1).normalize();
             }
+
+            const direction = getReferenceAnchorDirection(
+              result,
+              visual.part.id,
+              assembledReferenceModel,
+              modelLocalBounds,
+              modelCenter,
+              fallbackDirection
+            );
 
             const origin = modelCenter.clone().addScaledVector(direction, modelRadius * 2.2);
             anchorRaycaster.set(origin, direction.clone().negate());
-            const anchorTarget =
-              referencePartMeshes.get(visual.part.id) ?? assembledReferenceModel;
-            const hit = anchorRaycaster.intersectObject(anchorTarget, true)[0];
+            const anchorTargets = referencePartMeshes.get(visual.part.id);
+            const hit =
+              (anchorTargets
+                ? anchorRaycaster.intersectObjects(anchorTargets, true)[0]
+                : undefined) ??
+              anchorRaycaster.intersectObject(assembledReferenceModel, true)[0];
             if (!hit) {
               continue;
             }
 
             const anchor = new THREE.Object3D();
-            anchor.position.copy(hit.point);
+            // Raycaster hit points are world-space coordinates. Convert them
+            // before parenting so the marker remains glued to the surface as
+            // the root rotates, instead of drifting in space.
+            anchor.position.copy(referenceModelRoot.worldToLocal(hit.point.clone()));
             anchor.userData.partId = visual.part.id;
             referenceModelRoot.add(anchor);
             referenceAnchors.set(visual.part.id, anchor);
           }
 
-          referenceModelRoot.add(assembledReferenceModel);
           clickableMeshes.push(assembledReferenceModel);
           referenceModelLoaded = true;
           referenceModelPending = false;
@@ -2043,10 +3014,27 @@ function ViewerCanvas({
       setReferenceModelState("fallback");
     }
 
-    const handlePointerDown = (event: PointerEvent) => {
+    let labelPlacementPointer:
+      | { pointerId: number; x: number; y: number }
+      | null = null;
+
+    const setPointerFromEvent = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (labelEditorRef.current.isAddingCustomLabel) {
+        labelPlacementPointer = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY
+        };
+        return;
+      }
+
+      setPointerFromEvent(event);
 
       raycaster.setFromCamera(pointer, camera);
       const intersections = raycaster.intersectObjects(clickableMeshes, true);
@@ -2068,37 +3056,56 @@ function ViewerCanvas({
       }
     };
 
+    const handlePointerUp = (event: PointerEvent) => {
+      const start = labelPlacementPointer;
+      labelPlacementPointer = null;
+
+      if (
+        !start ||
+        start.pointerId !== event.pointerId ||
+        !labelEditorRef.current.isAddingCustomLabel
+      ) {
+        return;
+      }
+
+      // Keep an orbit/drag from accidentally becoming a label placement.
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 7) {
+        return;
+      }
+
+      if (!referenceModelLoaded) {
+        return;
+      }
+
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(referenceModelRoot, true)[0];
+
+      if (!hit) {
+        return;
+      }
+
+      // Persist a position in the model's local coordinate system. This is
+      // what makes a custom label follow the model, rather than stay in the
+      // air after the user orbits the camera.
+      const localPosition = referenceModelRoot.worldToLocal(hit.point.clone());
+      setDraftLabelPosition([localPosition.x, localPosition.y, localPosition.z]);
+      setDraftLabelName("");
+      setLabelEditorError(null);
+      setIsAddingCustomLabel(false);
+    };
+
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+    renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
     let explodeFactor = explode ? 1 : 0;
     let animationFrame = 0;
     let lastLabelUpdate = 0;
-    const markerRaycaster = new THREE.Raycaster();
+    const surfaceRaycaster = new THREE.Raycaster();
     const tempAnchorPosition = new THREE.Vector3();
+    const tempCustomAnchorPosition = new THREE.Vector3();
     const tempProjectedPosition = new THREE.Vector3();
     const tempLabelOffset = new THREE.Vector3();
-
-    function updateLines(selectedId: string | null) {
-      const state = interactionRef.current;
-
-      for (const relation of lines) {
-        const sourceVisible = !state.hiddenPartIds.has(relation.source.part.id);
-        const targetVisible = !state.hiddenPartIds.has(relation.target.part.id);
-        relation.line.visible =
-          !hasReferenceAssets && sourceVisible && targetVisible;
-
-        const sourcePosition = relation.source.object.position;
-        const targetPosition = relation.target.object.position;
-        const attribute = relation.line.geometry.getAttribute("position") as any;
-        attribute.setXYZ(0, sourcePosition.x, sourcePosition.y, sourcePosition.z);
-        attribute.setXYZ(1, targetPosition.x, targetPosition.y, targetPosition.z);
-        attribute.needsUpdate = true;
-
-        const isActive =
-          selectedId === relation.source.part.id || selectedId === relation.target.part.id;
-        relation.material.opacity = isActive ? 0.35 : 0.14;
-      }
-    }
 
     function updateLabels() {
       if (performance.now() - lastLabelUpdate < 32) {
@@ -2106,23 +3113,37 @@ function ViewerCanvas({
       }
 
       const nextLayouts: Record<string, LabelLayout> = {};
+      const candidates: MarkerCandidate[] = [];
+      const nextCustomLayouts: Record<string, LabelLayout> = {};
+      const customCandidates: MarkerCandidate[] = [];
+      const currentCustomLabels = customLabelsRef.current;
       const state = interactionRef.current;
       const currentSearchTerm = state.searchTerm.toLowerCase().trim();
+      const hiddenLayout = (): LabelLayout => ({
+        x: 0,
+        y: 0,
+        markerX: 0,
+        markerY: 0,
+        visible: false
+      });
 
       // Atlas labels belong to the real model only. If its GLB is still
-      // loading or cannot load, keep callouts hidden rather than showing
+      // loading or cannot load, keep markers hidden rather than showing
       // anchors from the synthetic study-map fallback.
       if (hasReferenceAssets && !referenceModelLoaded) {
         for (const visual of visuals) {
-          nextLayouts[visual.part.id] = {
-            x: 0,
-            y: 0,
-            visible: false
-          };
+          nextLayouts[visual.part.id] = hiddenLayout();
+        }
+        for (const label of currentCustomLabels) {
+          nextCustomLayouts[label.id] = hiddenLayout();
         }
         if (labelLayoutsChanged(labelLayoutsRef.current, nextLayouts)) {
           labelLayoutsRef.current = nextLayouts;
           setLabelLayouts(nextLayouts);
+        }
+        if (labelLayoutsChanged(customLabelLayoutsRef.current, nextCustomLayouts)) {
+          customLabelLayoutsRef.current = nextCustomLayouts;
+          setCustomLabelLayouts(nextCustomLayouts);
         }
         lastLabelUpdate = performance.now();
         return;
@@ -2134,19 +3155,17 @@ function ViewerCanvas({
           !currentSearchTerm || matchesSearch(visual.part, currentSearchTerm);
 
         if (hidden || !matches) {
-          nextLayouts[visual.part.id] = {
-            x: 0,
-            y: 0,
-            visible: false
-          };
+          nextLayouts[visual.part.id] = hiddenLayout();
           continue;
         }
 
         const referenceAnchor = referenceAnchors.get(visual.part.id);
         (referenceAnchor ?? visual.object).getWorldPosition(tempAnchorPosition);
-        tempLabelOffset
-          .copy(referenceAnchor ? new THREE.Vector3() : visual.placement.labelOffset)
-          .applyQuaternion(referenceAnchor ? new THREE.Quaternion() : root.quaternion);
+        if (referenceAnchor) {
+          tempLabelOffset.set(0, 0, 0);
+        } else {
+          tempLabelOffset.copy(visual.placement.labelOffset).applyQuaternion(root.quaternion);
+        }
         tempAnchorPosition.add(tempLabelOffset);
         tempProjectedPosition.copy(tempAnchorPosition).project(camera);
 
@@ -2159,32 +3178,55 @@ function ViewerCanvas({
           tempProjectedPosition.y <= 1.05;
 
         if (!visible) {
-          nextLayouts[visual.part.id] = {
-            x: 0,
-            y: 0,
-            visible: false
-          };
+          nextLayouts[visual.part.id] = hiddenLayout();
           continue;
         }
 
-        // A marker should disappear when its surface point rotates behind the
-        // organ. Otherwise a back-facing structure would look detached from
-        // the anatomy even though its projected coordinates are technically valid.
+        // A numbered marker belongs to the visible model surface. Hide it after the
+        // surface rotates behind the organ rather than projecting it through
+        // the mesh onto an unrelated front-facing point.
         let obscured = false;
         if (referenceModelLoaded) {
           const cameraToAnchor = tempAnchorPosition.clone().sub(camera.position);
           const anchorDistance = cameraToAnchor.length();
-          markerRaycaster.set(camera.position, cameraToAnchor.normalize());
-          const nearestHit = markerRaycaster.intersectObject(referenceModelRoot, true)[0];
+          surfaceRaycaster.set(camera.position, cameraToAnchor.normalize());
+          const nearestHit = surfaceRaycaster.intersectObject(referenceModelRoot, true)[0];
           obscured = Boolean(
             nearestHit && nearestHit.distance < anchorDistance - 0.035
           );
         }
 
-        nextLayouts[visual.part.id] = {
+        if (obscured) {
+          nextLayouts[visual.part.id] = hiddenLayout();
+          continue;
+        }
+
+        candidates.push({
+          id: visual.part.id,
           x: ((tempProjectedPosition.x + 1) * 0.5) * viewport.clientWidth,
-          y: ((1 - tempProjectedPosition.y) * 0.5) * viewport.clientHeight,
-          visible: !obscured
+          y: ((1 - tempProjectedPosition.y) * 0.5) * viewport.clientHeight
+        });
+      }
+
+      const arrangedMarkers = arrangeNumberMarkers(
+        candidates,
+        viewport.clientWidth,
+        viewport.clientHeight
+      );
+
+      for (const candidate of candidates) {
+        const placement = arrangedMarkers.get(candidate.id);
+
+        if (!placement) {
+          nextLayouts[candidate.id] = hiddenLayout();
+          continue;
+        }
+
+        nextLayouts[candidate.id] = {
+          x: candidate.x,
+          y: candidate.y,
+          ...placement,
+          visible: true
         };
       }
 
@@ -2192,11 +3234,81 @@ function ViewerCanvas({
         labelLayoutsRef.current = nextLayouts;
         setLabelLayouts(nextLayouts);
       }
+
+      for (const label of currentCustomLabels) {
+        tempCustomAnchorPosition.set(...label.position);
+        (referenceModelLoaded ? referenceModelRoot : root).localToWorld(
+          tempCustomAnchorPosition
+        );
+        tempProjectedPosition.copy(tempCustomAnchorPosition).project(camera);
+
+        const visible =
+          tempProjectedPosition.z > -1 &&
+          tempProjectedPosition.z < 1 &&
+          tempProjectedPosition.x >= -1.05 &&
+          tempProjectedPosition.x <= 1.05 &&
+          tempProjectedPosition.y >= -1.05 &&
+          tempProjectedPosition.y <= 1.05;
+
+        if (!visible) {
+          nextCustomLayouts[label.id] = hiddenLayout();
+          continue;
+        }
+
+        let obscured = false;
+        if (referenceModelLoaded) {
+          const cameraToAnchor = tempCustomAnchorPosition
+            .clone()
+            .sub(camera.position);
+          const anchorDistance = cameraToAnchor.length();
+          surfaceRaycaster.set(camera.position, cameraToAnchor.normalize());
+          const nearestHit = surfaceRaycaster.intersectObject(referenceModelRoot, true)[0];
+          obscured = Boolean(
+            nearestHit && nearestHit.distance < anchorDistance - 0.035
+          );
+        }
+
+        if (obscured) {
+          nextCustomLayouts[label.id] = hiddenLayout();
+          continue;
+        }
+
+        customCandidates.push({
+          id: label.id,
+          x: ((tempProjectedPosition.x + 1) * 0.5) * viewport.clientWidth,
+          y: ((1 - tempProjectedPosition.y) * 0.5) * viewport.clientHeight
+        });
+      }
+
+      const arrangedCustomMarkers = arrangeNumberMarkers(
+        customCandidates,
+        viewport.clientWidth,
+        viewport.clientHeight
+      );
+
+      for (const candidate of customCandidates) {
+        const placement = arrangedCustomMarkers.get(candidate.id);
+
+        nextCustomLayouts[candidate.id] = placement
+          ? {
+              x: candidate.x,
+              y: candidate.y,
+              ...placement,
+              visible: true
+            }
+          : hiddenLayout();
+      }
+
+      if (labelLayoutsChanged(customLabelLayoutsRef.current, nextCustomLayouts)) {
+        customLabelLayoutsRef.current = nextCustomLayouts;
+        setCustomLabelLayouts(nextCustomLayouts);
+      }
       lastLabelUpdate = performance.now();
     }
 
     function animate() {
       const state = interactionRef.current;
+      renderer.domElement.style.cursor = state.isAddingCustomLabel ? "crosshair" : "grab";
       explodeFactor = THREE.MathUtils.lerp(explodeFactor, state.explode ? 1 : 0, 0.08);
       const revealTarget = referenceModelLoaded || !modelWillLoad ? 1 : 0;
       modelReveal = THREE.MathUtils.lerp(modelReveal, revealTarget, 0.065);
@@ -2237,10 +3349,9 @@ function ViewerCanvas({
         }
       }
 
-      updateLines(state.selectedPartId);
       controls.update();
-      renderer.render(scene, camera);
       updateLabels();
+      renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(animate);
     }
 
@@ -2251,6 +3362,7 @@ function ViewerCanvas({
       window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       controls.dispose();
       renderer.dispose();
       disposeObject3D(scene);
@@ -2261,9 +3373,104 @@ function ViewerCanvas({
   const visibleLabels = result.parts.filter(
     (part) => !hiddenPartIds.has(part.id) && matchesSearch(part, searchTerm)
   );
+  const selectedPart = result.parts.find((part) => part.id === selectedPartId) ?? null;
   const visibleMarkerCount = visibleLabels.filter(
     (part) => labelLayouts[part.id]?.visible
   ).length;
+  const selectedLabelIsBehind = Boolean(
+    selectedPartId && !labelLayouts[selectedPartId]?.visible
+  );
+  const isUsingCustomLabels =
+    isLabelEditorOpen || customLabels.length > 0 || Boolean(draftLabel);
+  const showGeneratedLabels = !isUsingCustomLabels;
+  const visibleCustomLabelCount = displayCustomLabels.filter(
+    (label) => customLabelLayouts[label.id]?.visible
+  ).length;
+
+  async function publishCustomLabels(labels: CustomLabel[]) {
+    const requestId = projectSaveRequestRef.current + 1;
+    projectSaveRequestRef.current = requestId;
+    setProjectLabelSaveState("saving");
+
+    try {
+      const response = await fetch("/api/project-labels", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelKey: customLabelModelKey, labels })
+      });
+
+      if (!response.ok) {
+        throw new Error("Project labels could not be saved.");
+      }
+
+      if (projectSaveRequestRef.current === requestId) {
+        setProjectLabelSaveState("saved");
+      }
+    } catch {
+      if (projectSaveRequestRef.current === requestId) {
+        setProjectLabelSaveState("local-only");
+      }
+    }
+  }
+
+  function startAddingCustomLabel() {
+    if (referenceModelState !== "reference") {
+      setLabelEditorError(
+        referenceModelState === "loading"
+          ? "Wait for the anatomy model to finish loading, then place your label."
+          : "This anatomy model is unavailable, so it cannot accept a saved surface label."
+      );
+      return;
+    }
+
+    setDraftLabelPosition(null);
+    setDraftLabelName("");
+    setLabelEditorError(null);
+    setIsAddingCustomLabel(true);
+  }
+
+  function cancelCustomLabelDraft() {
+    setIsAddingCustomLabel(false);
+    setDraftLabelPosition(null);
+    setDraftLabelName("");
+    setLabelEditorError(null);
+  }
+
+  function saveCustomLabel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = draftLabelName.trim();
+
+    if (!draftLabelPosition) {
+      setLabelEditorError("Click a point on the model before saving the label.");
+      return;
+    }
+
+    if (!name) {
+      setLabelEditorError("Enter a label name before saving.");
+      return;
+    }
+
+    const nextLabels = [
+      ...customLabels,
+      {
+        id: createCustomLabelId(),
+        name,
+        position: draftLabelPosition
+      }
+    ];
+    setCustomLabelState({ storageKey: customLabelStorageKey, labels: nextLabels });
+    void publishCustomLabels(nextLabels);
+    setDraftLabelPosition(null);
+    setDraftLabelName("");
+    setLabelEditorError(null);
+    setIsAddingCustomLabel(false);
+  }
+
+  function removeCustomLabel(labelId: string) {
+    const nextLabels = customLabels.filter((label) => label.id !== labelId);
+    setCustomLabelState({ storageKey: customLabelStorageKey, labels: nextLabels });
+    void publishCustomLabels(nextLabels);
+  }
 
   return (
     <div
@@ -2292,7 +3499,7 @@ function ViewerCanvas({
         <span className="text-white/30">·</span>
         Scroll to zoom
         <span className="text-white/30">·</span>
-        Hover markers
+        Hover a number
       </div>
 
       <div className="absolute right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/60 backdrop-blur">
@@ -2306,6 +3513,266 @@ function ViewerCanvas({
       </div>
 
       <div ref={containerRef} className="absolute inset-0" />
+
+      <button
+        type="button"
+        aria-expanded={isLabelEditorOpen}
+        onClick={() => {
+          if (isLabelEditorOpen) {
+            cancelCustomLabelDraft();
+            setIsLabelEditorOpen(false);
+          } else {
+            setIsLabelEditorOpen(true);
+            setLabelEditorError(null);
+          }
+        }}
+        className={`absolute right-4 top-16 z-20 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] backdrop-blur transition ${
+          isLabelEditorOpen
+            ? "border-cyan-200/60 bg-cyan-400/16 text-cyan-50"
+            : "border-cyan-300/25 bg-slate-950/78 text-cyan-50 hover:border-cyan-200/55 hover:bg-slate-900"
+        }`}
+      >
+        {isLabelEditorOpen ? "Done editing" : "Edit labels"}
+      </button>
+
+      {isLabelEditorOpen ? (
+        <section className="absolute right-4 top-28 z-20 w-[min(19rem,90vw)] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/95 p-3 shadow-[0_20px_54px_rgba(2,6,23,0.5)] backdrop-blur-xl">
+          <div className="flex items-start justify-between gap-3 px-1 py-1">
+            <div>
+              <p className="text-[0.63rem] font-semibold uppercase tracking-[0.2em] text-cyan-100/60">
+                Edit labels
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                Place your own anatomical markers
+              </p>
+            </div>
+            <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-cyan-100/80">
+              {customLabels.length} saved
+            </span>
+          </div>
+
+          <p className="mt-3 px-1 text-xs leading-5 text-white/50">
+            Each label uses the exact point you click on the real 3D model and replaces the suggested markers for this diagram.
+          </p>
+
+          <div className={`mt-3 rounded-xl border px-3 py-2.5 text-xs leading-5 ${
+            projectLabelSaveState === "local-only"
+              ? "border-amber-300/20 bg-amber-500/[0.1] text-amber-50"
+              : "border-emerald-300/15 bg-emerald-500/[0.08] text-emerald-50/85"
+          }`}>
+            {projectLabelSaveState === "saving"
+              ? "Saving labels into the project file…"
+              : projectLabelSaveState === "saved"
+                ? "Saved to data/custom-labels.json. Commit and push this file to share the labels with everyone."
+                : projectLabelSaveState === "local-only"
+                  ? "Saved only in this browser. Run the project locally with npm run dev to publish labels into the repository."
+                  : "New labels saved while running locally will be added to the project file for GitHub."}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={startAddingCustomLabel}
+              disabled={isAddingCustomLabel}
+              className="rounded-xl bg-cyan-200 px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-100 disabled:cursor-default disabled:opacity-70"
+            >
+              {isAddingCustomLabel ? "Click model…" : "Add label"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelCustomLabelDraft}
+              disabled={!isAddingCustomLabel}
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:bg-white/[0.08] disabled:cursor-default disabled:opacity-35"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {isAddingCustomLabel ? (
+            <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/[0.08] px-3 py-2.5 text-xs leading-5 text-cyan-50/85">
+              Click the exact anatomical point you want to label. Dragging still orbits the model and will not place a marker.
+            </div>
+          ) : null}
+
+          {labelEditorError ? (
+            <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-500/[0.1] px-3 py-2.5 text-xs leading-5 text-amber-50">
+              {labelEditorError}
+            </div>
+          ) : null}
+
+          {customLabels.length ? (
+            <div className="mt-3 max-h-44 space-y-1 overflow-y-auto pr-1">
+              {customLabels.map((label, index) => (
+                <div
+                  key={label.id}
+                  className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-2.5 py-2"
+                >
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-cyan-300/35 text-[0.58rem] font-bold text-cyan-50">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">
+                    {label.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeCustomLabel(label.id)}
+                    className="rounded-lg px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-white/45 transition hover:bg-rose-500/15 hover:text-rose-100"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 rounded-xl border border-dashed border-white/10 px-3 py-3 text-xs leading-5 text-white/45">
+              No custom labels yet. Choose Add label, click the model, then give the point a name.
+            </p>
+          )}
+        </section>
+      ) : null}
+
+      {draftLabelPosition ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]">
+          <form
+            onSubmit={saveCustomLabel}
+            className="w-full max-w-sm rounded-[1.5rem] border border-cyan-300/30 bg-slate-950/95 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.64)]"
+          >
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-cyan-100/65">
+              New custom label
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-white">Name this point</h3>
+            <p className="mt-2 text-sm leading-6 text-white/55">
+              Saving locally also writes this point into the project label file, ready to commit and share with everyone who downloads the repository.
+            </p>
+            <label className="mt-4 block">
+              <span className="sr-only">Label name</span>
+              <input
+                autoFocus
+                value={draftLabelName}
+                onChange={(event) => {
+                  setDraftLabelName(event.target.value);
+                  setLabelEditorError(null);
+                }}
+                placeholder="e.g. Aorta"
+                maxLength={80}
+                className="w-full rounded-xl border border-white/15 bg-white/[0.06] px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/55"
+              />
+            </label>
+            {labelEditorError ? (
+              <p className="mt-3 text-xs leading-5 text-amber-100">{labelEditorError}</p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelCustomLabelDraft}
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-xl bg-cyan-200 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-100"
+              >
+                Save label
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        aria-expanded={showStructureList}
+        onClick={() => setShowStructureList((current) => !current)}
+        className="absolute left-4 top-16 z-20 inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-slate-950/78 px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-cyan-50 backdrop-blur transition hover:border-cyan-200/55 hover:bg-slate-900"
+      >
+        {isUsingCustomLabels ? "My labels" : "Structures"}
+        <span className="rounded-full bg-cyan-300/12 px-1.5 py-0.5 text-[0.58rem] text-cyan-100/80">
+          {isUsingCustomLabels ? customLabels.length : visibleLabels.length}
+        </span>
+      </button>
+
+      {showStructureList ? (
+        <section className="absolute left-4 top-28 z-20 w-64 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/94 p-2 shadow-[0_20px_54px_rgba(2,6,23,0.5)] backdrop-blur-xl">
+          <div className="flex items-center justify-between px-2 py-2">
+            <div>
+              <p className="text-[0.63rem] font-semibold uppercase tracking-[0.2em] text-white/45">
+                {isUsingCustomLabels ? "Your labels" : "Numbered labels"}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {isUsingCustomLabels
+                  ? "Saved on this 3D model"
+                  : "Hover a number to identify it"}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close structure list"
+              onClick={() => setShowStructureList(false)}
+              className="rounded-lg px-2 py-1 text-lg leading-none text-white/45 transition hover:bg-white/[0.07] hover:text-white"
+            >
+              ×
+            </button>
+          </div>
+          <div className="max-h-[min(22rem,calc(100dvh-14rem))] space-y-1 overflow-y-auto pr-1">
+            {isUsingCustomLabels ? customLabels.map((label, index) => {
+              const linkedPartId = getCustomLabelPartId(label, result);
+              const selected = Boolean(
+                linkedPartId && linkedPartId === selectedPartId
+              );
+
+              return (
+                <button
+                  key={label.id}
+                  type="button"
+                  onClick={() => {
+                    if (linkedPartId) {
+                      onSelectPart(linkedPartId);
+                    } else {
+                      setIsLabelEditorOpen(true);
+                    }
+                    setShowStructureList(false);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    selected
+                      ? "bg-cyan-400/14 text-white"
+                      : "text-white/70 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                >
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-cyan-300/35 text-[0.58rem] font-bold text-cyan-50">
+                    {index + 1}
+                  </span>
+                  <span className="truncate">{label.name}</span>
+                </button>
+              );
+            }) : visibleLabels.map((part) => {
+              const selected = selectedPartId === part.id;
+              const number = getPartNumber(part.id, result);
+
+              return (
+                <button
+                  key={part.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectPart(part.id);
+                    setShowStructureList(false);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    selected
+                      ? "bg-cyan-400/14 text-white"
+                      : "text-white/70 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                >
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-white/25 text-[0.58rem] font-bold text-white/80">
+                    {number}
+                  </span>
+                  <span className="truncate">{part.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {referenceModelState === "loading" && !isLoading ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
@@ -2322,48 +3789,165 @@ function ViewerCanvas({
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        {visibleLabels.map((part, index) => {
+        <svg
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full overflow-visible"
+        >
+          {showGeneratedLabels ? visibleLabels.map((part) => {
+            const layout = labelLayouts[part.id];
+
+            if (
+              !layout?.visible ||
+              Math.hypot(layout.markerX - layout.x, layout.markerY - layout.y) < 1
+            ) {
+              return null;
+            }
+
+            return (
+              <g key={`marker-leader-${part.id}`}>
+                <line
+                  x1={layout.x}
+                  y1={layout.y}
+                  x2={layout.markerX}
+                  y2={layout.markerY}
+                  stroke={partColor(part.id, result)}
+                  strokeWidth="1"
+                  strokeLinecap="round"
+                  opacity="0.8"
+                />
+                <circle
+                  cx={layout.x}
+                  cy={layout.y}
+                  r="2"
+                  fill={partColor(part.id, result)}
+                />
+              </g>
+            );
+          }) : null}
+
+          {isUsingCustomLabels ? displayCustomLabels.map((label) => {
+            const layout = customLabelLayouts[label.id];
+
+            if (
+              !layout?.visible ||
+              Math.hypot(layout.markerX - layout.x, layout.markerY - layout.y) < 1
+            ) {
+              return null;
+            }
+
+            return (
+              <g key={`custom-marker-leader-${label.id}`}>
+                <line
+                  x1={layout.x}
+                  y1={layout.y}
+                  x2={layout.markerX}
+                  y2={layout.markerY}
+                  stroke="#67e8f9"
+                  strokeWidth="1"
+                  strokeLinecap="round"
+                  opacity="0.9"
+                />
+                <circle cx={layout.x} cy={layout.y} r="2" fill="#67e8f9" />
+              </g>
+            );
+          }) : null}
+        </svg>
+
+        {showGeneratedLabels ? visibleLabels.map((part) => {
           const layout = labelLayouts[part.id];
           const selected = selectedPartId === part.id;
+          const number = getPartNumber(part.id, result);
 
           if (!layout?.visible) {
             return null;
           }
 
           return (
-            <button
+            <div
               key={part.id}
-              type="button"
-              onClick={() => onSelectPart(part.id)}
-              aria-label={`Study marker ${index + 1}: ${part.name}`}
-              className={`group motion-label pointer-events-auto absolute grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-[0.68rem] font-bold tabular-nums text-white backdrop-blur transition-[left,top,transform,background-color,border-color] duration-150 ease-out hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 sm:h-8 sm:w-8 ${
-                selected
-                  ? "border-cyan-200/80 bg-cyan-400 text-slate-950 shadow-[0_0_24px_rgba(56,189,248,0.5)]"
-                  : "border-white/35 bg-slate-950/80 shadow-[0_8px_18px_rgba(2,6,23,0.48)] hover:bg-slate-900"
-              }`}
-              style={{
-                left: layout.x,
-                top: layout.y,
-                borderColor: selected ? undefined : partColor(part.id, result),
-                animationDelay: `${index * 46}ms`
-              }}
+              className="absolute inset-0"
             >
-              {index + 1}
-              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-max max-w-[min(15rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-white/10 bg-slate-950/95 px-3 py-2 text-left text-[0.67rem] font-semibold uppercase tracking-[0.15em] text-white opacity-0 shadow-[0_14px_32px_rgba(2,6,23,0.46)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-                <span
-                  className="mr-2 inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: partColor(part.id, result) }}
-                />
-                {part.name}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onSelectPart(part.id)}
+                aria-label={`${number}. ${part.name}`}
+                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/92 text-[0.58rem] font-bold tabular-nums text-white shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 hover:bg-slate-900 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                  selected
+                    ? "border-cyan-100 bg-cyan-400/20"
+                    : "border-white/60"
+                }`}
+                style={{
+                  left: layout.markerX,
+                  top: layout.markerY,
+                  borderColor: selected ? undefined : partColor(part.id, result)
+                }}
+              >
+                {number}
+                <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-[min(15rem,calc(100vw_-_2rem))] -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/95 px-2.5 py-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-white opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.46)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span className="mr-1.5 text-white/45">{number}.</span>
+                  {part.name}
+                </span>
+              </button>
+            </div>
           );
-        })}
+        }) : null}
+
+        {isUsingCustomLabels ? displayCustomLabels.map((label, index) => {
+          const layout = customLabelLayouts[label.id];
+          const isDraft = label.id === "draft-custom-label";
+          const linkedPartId = isDraft ? null : getCustomLabelPartId(label, result);
+          const selected = Boolean(
+            linkedPartId && linkedPartId === selectedPartId
+          );
+          const number = index + 1;
+
+          if (!layout?.visible) {
+            return null;
+          }
+
+          return (
+            <div key={label.id} className="absolute inset-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (linkedPartId) {
+                    onSelectPart(linkedPartId);
+                  } else {
+                    setIsLabelEditorOpen(true);
+                  }
+                }}
+                aria-label={`Custom label ${number}. ${label.name}`}
+                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/95 text-[0.58rem] font-bold tabular-nums text-cyan-50 shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                  isDraft
+                    ? "border-amber-200 border-dashed text-amber-50"
+                    : selected
+                      ? "border-cyan-100 bg-cyan-400/25"
+                      : "border-cyan-300/90"
+                }`}
+                style={{ left: layout.markerX, top: layout.markerY }}
+              >
+                {number}
+                <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-[min(15rem,calc(100vw_-_2rem))] -translate-x-1/2 rounded-lg border border-cyan-300/20 bg-slate-950/95 px-2.5 py-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-cyan-50 opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.46)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span className="mr-1.5 text-cyan-100/45">{number}.</span>
+                  {isDraft ? "Name this point" : label.name}
+                </span>
+              </button>
+            </div>
+          );
+        }) : null}
       </div>
+
+      {showGeneratedLabels && selectedLabelIsBehind && selectedPart ? (
+        <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-cyan-300/20 bg-slate-950/80 px-4 py-2 text-center text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-cyan-50/80 backdrop-blur">
+          Rotate to reveal {selectedPart.name}
+        </div>
+      ) : null}
 
       <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex items-center justify-between gap-3">
         <div className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/55 backdrop-blur">
-          {visibleMarkerCount} numbered markers
+          {isUsingCustomLabels
+            ? `${visibleCustomLabelCount} custom markers`
+            : `${visibleMarkerCount} visible markers`}
         </div>
         <div className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-2 text-[0.65rem] uppercase tracking-[0.24em] text-white/55 backdrop-blur">
           {referenceModelState === "reference"
@@ -2380,6 +3964,11 @@ function ViewerCanvas({
 function partColor(partId: string, result: VisionExtractionResult) {
   const index = result.parts.findIndex((part) => part.id === partId);
   return palette[(index < 0 ? 0 : index) % palette.length];
+}
+
+function getPartNumber(partId: string, result: VisionExtractionResult) {
+  const index = result.parts.findIndex((part) => part.id === partId);
+  return index < 0 ? 0 : index + 1;
 }
 
 export { AnatomyViewer };

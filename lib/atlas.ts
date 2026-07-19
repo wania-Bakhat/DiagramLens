@@ -707,7 +707,7 @@ extendOrgan(
   [
     { id: "superior_vena_cava", name: "Superior vena cava", description: "Large vein entering the right atrium from above.", function: "Returns oxygen-poor blood from the head and upper body." },
     { id: "inferior_vena_cava", name: "Inferior vena cava", description: "Large vein entering the right atrium from below.", function: "Returns oxygen-poor blood from the lower body." },
-    { id: "pulmonary_artery", name: "Pulmonary artery", description: "Artery leaving the right ventricle for the lungs.", function: "Carries oxygen-poor blood to the lungs for gas exchange." },
+    { id: "pulmonary_artery", name: "Pulmonary trunk", description: "Short arterial trunk leaving the right ventricle before dividing into the right and left pulmonary arteries.", function: "Carries oxygen-poor blood from the heart toward the lungs for gas exchange." },
     { id: "pulmonary_veins", name: "Pulmonary veins", description: "Veins returning from the lungs to the left atrium.", function: "Bring oxygen-rich blood back to the heart." },
     { id: "interventricular_septum", name: "Interventricular septum", description: "Muscular wall separating the two ventricles.", function: "Keeps oxygen-rich and oxygen-poor blood pathways separate." },
     { id: "coronary_arteries", name: "Coronary arteries", description: "Vessels running over the heart surface.", function: "Supply the myocardium with oxygen-rich blood." }
@@ -1016,6 +1016,107 @@ atlasLibrary.push(
       { sourcePartId: "skeletal_system", targetPartId: "urinary_system", relation: "protects" }
     ]
   }
+);
+
+// These details are used by the author-curated, point-and-click labels. They
+// retain the same study-panel treatment as the core atlas structures while
+// keeping the learner's own marker placement as the visible source of truth.
+extendOrgan(
+  "lungs",
+  [
+    { id: "cardiac_notch", name: "Cardiac notch", description: "Indentation on the anterior border of the left lung where the heart projects.", function: "Creates room for the heart within the left thorax." },
+    { id: "lingula", name: "Lingula", description: "Tongue-like projection of the left upper lobe beside the cardiac notch.", function: "Occupies a position comparable to the right middle lobe." },
+    { id: "lung_apex", name: "Apex of lung", description: "Uppermost pointed portion of a lung, extending above the first rib.", function: "Marks the superior limit of the lung." }
+  ],
+  []
+);
+
+extendOrgan(
+  "brain",
+  [
+    { id: "pons", name: "Pons", description: "Bulging middle portion of the brainstem between the midbrain and medulla oblongata.", function: "Relays signals between the cerebrum, cerebellum, and spinal cord and helps regulate breathing." },
+    { id: "medulla_oblongata", name: "Medulla oblongata", description: "Lowest part of the brainstem, continuous with the spinal cord.", function: "Regulates vital automatic functions including breathing, heart rate, and blood pressure." },
+    { id: "central_sulcus", name: "Central sulcus", description: "Prominent groove separating the frontal lobe from the parietal lobe.", function: "Marks the boundary between primary motor and primary somatosensory cortices." },
+    { id: "lateral_cerebral_sulcus", name: "Lateral cerebral sulcus", description: "Deep lateral groove, also called the Sylvian fissure.", function: "Separates the temporal lobe from the frontal and parietal lobes." }
+  ],
+  []
+);
+
+extendOrgan(
+  "kidneys",
+  [
+    { id: "arcuate_artery", name: "Arcuate artery", description: "Artery arching along the base of a renal pyramid at the corticomedullary junction.", function: "Gives rise to cortical radiate arteries that supply the renal cortex." },
+    { id: "interlobular_arteries", name: "Interlobular arteries", description: "Small cortical arteries that radiate outward between renal lobules.", function: "Deliver blood toward the afferent arterioles of nephrons." },
+    { id: "superior_segmental_artery", name: "Superior segmental artery", description: "Branch of the renal artery supplying the superior renal segment.", function: "Delivers arterial blood to the upper portion of the kidney." },
+    { id: "posterior_segmental_artery", name: "Posterior segmental artery", description: "Branch of the renal artery supplying the posterior renal segment.", function: "Delivers arterial blood to the posterior part of the kidney." },
+    { id: "inferior_segmental_artery", name: "Inferior segmental artery", description: "Branch of the renal artery supplying the inferior renal segment.", function: "Delivers arterial blood to the lower portion of the kidney." },
+    { id: "interlobar_arteries", name: "Interlobar arteries", description: "Arteries that travel between renal pyramids in the renal columns.", function: "Carry blood from segmental arteries toward the arcuate arteries." },
+    { id: "renal_pelvis", name: "Renal pelvis", description: "Funnel-shaped collecting chamber at the kidney hilum.", function: "Collects urine from the calyces and channels it into the ureter." }
+  ],
+  []
+);
+
+extendOrgan(
+  "liver",
+  [
+    { id: "diaphragmatic_surface", name: "Diaphragmatic surface", description: "Smooth convex surface of the liver that lies against the diaphragm.", function: "Forms the superior and anterior contact surface of the liver." }
+  ],
+  []
+);
+
+extendOrgan(
+  "eye",
+  [
+    { id: "retinal_arteries", name: "Retinal arteries", description: "Branches of the central retinal artery visible on the inner retinal surface.", function: "Supply oxygenated blood to the inner layers of the retina." }
+  ],
+  []
+);
+
+extendOrgan(
+  "pancreas",
+  [
+    { id: "pancreatic_lobule", name: "Pancreatic lobule", description: "Small anatomical subdivision of exocrine pancreatic tissue containing acini and ducts.", function: "Organizes enzyme-producing acini and their drainage into the duct system." },
+    { id: "accessory_pancreatic_duct", name: "Accessory pancreatic duct", description: "Secondary pancreatic drainage channel, also called the duct of Santorini.", function: "May deliver pancreatic secretions into the duodenum through the minor papilla." }
+  ],
+  []
+);
+
+extendOrgan(
+  "spleen",
+  [
+    { id: "splenic_trabecula", name: "Trabecula", description: "Connective-tissue band extending inward from the splenic capsule.", function: "Supports splenic tissue and carries vessels through the organ." },
+    { id: "splenic_artery", name: "Splenic artery", description: "Artery entering the spleen at the hilum, usually a branch of the celiac trunk.", function: "Supplies oxygenated blood to splenic tissue." },
+    { id: "splenic_vein", name: "Splenic vein", description: "Vein leaving the spleen at the hilum.", function: "Drains splenic blood toward the portal venous system." },
+    { id: "lymphoid_follicles", name: "Lymphoid follicles", description: "Immune-cell aggregates within the spleen's white pulp.", function: "Support immune responses to antigens carried in the blood." }
+  ],
+  []
+);
+
+extendOrgan(
+  "vascular-system",
+  [
+    { id: "heart", name: "Heart", description: "Muscular pump at the center of the circulatory system.", function: "Generates the pressure that moves blood through pulmonary and systemic circuits." },
+    { id: "common_iliac_vein", name: "Common iliac vein", description: "Large pelvic vein formed by the internal and external iliac veins.", function: "Returns blood from the lower limb and pelvis toward the inferior vena cava." },
+    { id: "anterior_tibial_artery", name: "Anterior tibial artery", description: "Artery of the anterior leg compartment that continues onto the dorsum of the foot.", function: "Supplies the anterior leg and dorsal foot." },
+    { id: "posterior_tibial_artery", name: "Posterior tibial artery", description: "Artery descending in the posterior leg behind the medial malleolus.", function: "Supplies the posterior leg and plantar foot." }
+  ],
+  []
+);
+
+extendOrgan(
+  "skeleton",
+  [
+    { id: "mandible", name: "Mandible", description: "Lower jawbone and the only freely movable bone of the skull.", function: "Supports the lower teeth and enables chewing and speech movements." },
+    { id: "sternum", name: "Sternum", description: "Flat midline bone at the front of the thorax.", function: "Anchors ribs and clavicles and protects organs in the chest." },
+    { id: "thorax", name: "Thorax", description: "Chest region bounded by the rib cage, sternum, and thoracic vertebrae.", function: "Protects the heart and lungs and supports respiration." },
+    { id: "ulna", name: "Ulna", description: "Medial forearm bone on the little-finger side in anatomical position.", function: "Forms the main hinge of the elbow with the humerus." },
+    { id: "radius", name: "Radius", description: "Lateral forearm bone on the thumb side in anatomical position.", function: "Rotates around the ulna to turn the palm." },
+    { id: "sacrum", name: "Sacrum", description: "Triangular fused bone at the base of the vertebral column.", function: "Transfers weight from the spine to the pelvis." },
+    { id: "patella", name: "Patella", description: "Sesamoid bone embedded in the quadriceps tendon at the front of the knee.", function: "Protects the knee and improves leverage of the quadriceps." },
+    { id: "tibia", name: "Tibia", description: "Large medial weight-bearing bone of the lower leg.", function: "Transfers body weight from the knee to the ankle." },
+    { id: "fibula", name: "Fibula", description: "Slender lateral bone of the lower leg.", function: "Stabilizes the ankle and provides muscle attachment." }
+  ],
+  []
 );
 
 export function findAtlasOrgan(identifier: string | null | undefined) {
