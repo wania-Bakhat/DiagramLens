@@ -731,6 +731,17 @@
           -0.09890608135246076
         ]
       }
+    ],
+    "digestive-system:models-sketchfab-models-digestive-system-glb": [
+      {
+        "id": "1b6615ef-6cde-4a2a-b381-bd5af5da6a88",
+        "name": "small intestine",
+        "position": [
+          -0.11809845275917928,
+          -0.43812912301531437,
+          0.28287477431939023
+        ]
+      }
     ]
   }
 }

@@ -6,5 +6,5 @@ export type {
   VisionRelationship
 } from "./types";
 export { sampleOrganLibrary } from "./sample-organs";
-export { mockVisionAdapter as visionAdapter } from "./mock-vision-adapter";
+export { apiVisionAdapter as visionAdapter } from "./api-vision-adapter";
 

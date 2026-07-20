@@ -10,6 +10,7 @@ export default {
     extend: {
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
+        editorial: ["var(--font-editorial)", "serif"],
         body: ["var(--font-body)", "sans-serif"]
       },
       colors: {

@@ -1126,6 +1126,25 @@ export function findAtlasOrgan(identifier: string | null | undefined) {
 
   const normalized = slugify(identifier);
 
+  // A card slug or an organ's exact name must always win. The previous fuzzy
+  // lookup made "digestive-system" resolve to Pancreas because Pancreas has a
+  // "digestive" alias and appears earlier in the library.
+  const directMatch = atlasLibrary.find((organ) =>
+    [organ.slug, organ.organName].some((term) => slugify(term) === normalized)
+  );
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const exactAliasMatch = atlasLibrary.find((organ) =>
+    organ.aliases.some((alias) => slugify(alias) === normalized)
+  );
+
+  if (exactAliasMatch) {
+    return exactAliasMatch;
+  }
+
   return (
     atlasLibrary.find((organ) =>
       [organ.slug, organ.organName, ...organ.aliases].some((term) =>

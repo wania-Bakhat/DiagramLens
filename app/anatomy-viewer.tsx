@@ -467,11 +467,15 @@ const referenceAnchorHints: Record<string, Record<string, [number, number, numbe
     duodenum: [-0.9, -0.28, 0.58]
   },
   "digestive-system": {
-    liver: [-0.16, 0.62, 0.82],
-    pancreas: [0, 0.22, 0.8],
-    small_intestine: [0, -0.22, 0.94],
-    large_intestine: [0, -0.14, 0.72],
-    bile_pathway: [-0.14, 0.36, 0.94]
+    // The supplied digestive GLB is a single mesh. These targets deliberately
+    // distinguish the upper liver, pancreatic bed, central small-bowel coils,
+    // outer colonic frame, and duct area rather than aiming every label at the
+    // same front-facing abdominal surface.
+    liver: [-0.24, 0.12, 0.88],
+    pancreas: [0.18, -0.12, 0.72],
+    small_intestine: [0.06, -0.56, 0.26],
+    large_intestine: [-0.68, -0.46, 0.92],
+    bile_pathway: [-0.3, 0.02, 0.94]
   },
   spleen: {
     spleen: [0, 0.04, 0.88],
@@ -504,10 +508,31 @@ const referenceAnchorHints: Record<string, Record<string, [number, number, numbe
   }
 };
 
-function getReferenceAnchorDirection(
+// These reference assets contain a single combined mesh. Casting a ray from
+// the camera-facing side always hits the oesophagus or colon first, even when
+// the intended target is the liver or the central small-bowel loops.
+const nearestSurfaceAnchorParts: Record<string, Set<string>> = {
+  "digestive-system": new Set([
+    "liver",
+    "pancreas",
+    "small_intestine",
+    "large_intestine",
+    "bile_pathway"
+  ])
+};
+
+function shouldUseNearestSurfaceAnchor(
+  result: VisionExtractionResult,
+  partId: string
+) {
+  return Boolean(
+    nearestSurfaceAnchorParts[slugify(result.organSlug ?? result.organName)]?.has(partId)
+  );
+}
+
+function getReferenceAnchorTarget(
   result: VisionExtractionResult,
   partId: string,
-  model: InstanceType<typeof THREE.Object3D>,
   modelLocalBounds: InstanceType<typeof THREE.Box3>,
   modelCenter: InstanceType<typeof THREE.Vector3>,
   fallbackDirection: InstanceType<typeof THREE.Vector3>
@@ -516,7 +541,13 @@ function getReferenceAnchorDirection(
   const hint = referenceAnchorHints[organKey]?.[partId];
 
   if (!hint) {
-    return fallbackDirection;
+    const modelSize = modelLocalBounds.getSize(new THREE.Vector3());
+    return modelCenter
+      .clone()
+      .addScaledVector(
+        fallbackDirection,
+        Math.max(modelSize.x, modelSize.y, modelSize.z) * 0.5
+      );
   }
 
   const localCenter = modelLocalBounds.getCenter(new THREE.Vector3());
@@ -530,7 +561,43 @@ function getReferenceAnchorDirection(
       )
     );
 
-  return model.localToWorld(targetPoint).sub(modelCenter).normalize();
+  // setFromObject returns world-space bounds here. Applying model.localToWorld
+  // a second time collapsed every digestive target into the same direction.
+  return targetPoint;
+}
+
+function findNearestReferenceSurfacePoint(
+  model: InstanceType<typeof THREE.Object3D>,
+  targetPoint: InstanceType<typeof THREE.Vector3>
+) {
+  let nearestPoint: InstanceType<typeof THREE.Vector3> | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  const candidatePoint = new THREE.Vector3();
+
+  model.traverse((object: InstanceType<typeof THREE.Object3D>) => {
+    const mesh = object as InstanceType<typeof THREE.Mesh>;
+    const position = mesh.isMesh ? mesh.geometry.attributes.position : undefined;
+
+    if (!position) {
+      return;
+    }
+
+    // Keep this bounded for very dense reference models while retaining every
+    // vertex on compact single-mesh organs such as the digestive system.
+    const stride = Math.max(1, Math.floor(position.count / 30_000));
+    for (let index = 0; index < position.count; index += stride) {
+      candidatePoint.fromBufferAttribute(position, index);
+      mesh.localToWorld(candidatePoint);
+      const distance = candidatePoint.distanceToSquared(targetPoint);
+
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestPoint = candidatePoint.clone();
+      }
+    }
+  });
+
+  return nearestPoint;
 }
 
 // Markers stay on their anatomical surface targets. When two points project
@@ -539,7 +606,8 @@ function getReferenceAnchorDirection(
 function arrangeNumberMarkers(
   candidates: MarkerCandidate[],
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
+  spreadLabels = false
 ) {
   const layouts = new Map<string, Pick<LabelLayout, "markerX" | "markerY">>();
   const placed: Array<{ x: number; y: number }> = [];
@@ -547,8 +615,22 @@ function arrangeNumberMarkers(
   const minimumDistance = 27;
 
   for (const candidate of candidates) {
-    let markerX = candidate.x;
-    let markerY = candidate.y;
+    const deltaX = candidate.x - viewportWidth / 2;
+    const deltaY = candidate.y - viewportHeight / 2;
+    const distanceFromCenter = Math.hypot(deltaX, deltaY) || 1;
+    const labelOffset = spreadLabels ? 58 : 0;
+    const preferredX = THREE.MathUtils.clamp(
+      candidate.x + (deltaX / distanceFromCenter) * labelOffset,
+      edgePadding,
+      viewportWidth - edgePadding
+    );
+    const preferredY = THREE.MathUtils.clamp(
+      candidate.y + (deltaY / distanceFromCenter) * labelOffset,
+      edgePadding,
+      viewportHeight - edgePadding
+    );
+    let markerX = preferredX;
+    let markerY = preferredY;
     let placedMarker = false;
     let clearestPosition = { x: markerX, y: markerY };
     let greatestClearance = placed.length === 0 ? Number.POSITIVE_INFINITY : -1;
@@ -560,12 +642,12 @@ function arrangeNumberMarkers(
       for (let step = 0; step < steps; step += 1) {
         const angle = ring === 0 ? 0 : (step / steps) * Math.PI * 2 - Math.PI / 2;
         const nextX = THREE.MathUtils.clamp(
-          candidate.x + Math.cos(angle) * radius,
+          preferredX + Math.cos(angle) * radius,
           edgePadding,
           viewportWidth - edgePadding
         );
         const nextY = THREE.MathUtils.clamp(
-          candidate.y + Math.sin(angle) * radius,
+          preferredY + Math.sin(angle) * radius,
           edgePadding,
           viewportHeight - edgePadding
         );
@@ -1559,7 +1641,7 @@ function TutorChatPanel({
     <section
       role="dialog"
       aria-modal="true"
-      aria-label="DiagramLens AI Tutor"
+      aria-label="BioLens AI Tutor"
       className={
         fullscreen
           ? "fixed inset-0 z-[80] flex min-h-[100dvh] bg-[#02050b]/98 p-3 text-white backdrop-blur-2xl sm:p-6"
@@ -2194,11 +2276,13 @@ function AnatomyViewer({
             <button
               type="button"
               onClick={() => setExplode((current) => !current)}
+              aria-pressed={explode}
+              title="Moves numbered markers outward while keeping their connector on the exact anatomy point."
               className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${
                 explode ? "border-cyan-300/35 bg-cyan-500/15 text-cyan-50" : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/[0.08]"
               }`}
             >
-              Explode
+              Spread labels
             </button>
             <button
               type="button"
@@ -2347,13 +2431,15 @@ function AnatomyViewer({
               <button
                 type="button"
                 onClick={() => setExplode((current) => !current)}
+                aria-pressed={explode}
+                title="Moves numbered markers outward while keeping their connector on the exact anatomy point."
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 ${
                   explode
                     ? "border-cyan-300/40 bg-cyan-500/15 text-white"
                     : "border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
                 }`}
               >
-                Explode view
+                Spread labels
               </button>
               <button
                 type="button"
@@ -2967,24 +3053,33 @@ function ViewerCanvas({
               fallbackDirection.set(0, 0.2, 1).normalize();
             }
 
-            const direction = getReferenceAnchorDirection(
+            const targetPoint = getReferenceAnchorTarget(
               result,
               visual.part.id,
-              assembledReferenceModel,
               modelLocalBounds,
               modelCenter,
               fallbackDirection
             );
+            const direction = targetPoint.clone().sub(modelCenter).normalize();
 
             const origin = modelCenter.clone().addScaledVector(direction, modelRadius * 2.2);
             anchorRaycaster.set(origin, direction.clone().negate());
             const anchorTargets = referencePartMeshes.get(visual.part.id);
-            const hit =
-              (anchorTargets
-                ? anchorRaycaster.intersectObjects(anchorTargets, true)[0]
-                : undefined) ??
-              anchorRaycaster.intersectObject(assembledReferenceModel, true)[0];
-            if (!hit) {
+            const useNearestSurface = shouldUseNearestSurfaceAnchor(
+              result,
+              visual.part.id
+            );
+            const hit = useNearestSurface
+              ? undefined
+              : (anchorTargets
+                  ? anchorRaycaster.intersectObjects(anchorTargets, true)[0]
+                  : undefined) ??
+                anchorRaycaster.intersectObject(assembledReferenceModel, true)[0];
+            const anchorPoint = useNearestSurface
+              ? findNearestReferenceSurfacePoint(assembledReferenceModel, targetPoint)
+              : hit?.point ??
+                findNearestReferenceSurfacePoint(assembledReferenceModel, targetPoint);
+            if (!anchorPoint) {
               continue;
             }
 
@@ -2992,7 +3087,7 @@ function ViewerCanvas({
             // Raycaster hit points are world-space coordinates. Convert them
             // before parenting so the marker remains glued to the surface as
             // the root rotates, instead of drifting in space.
-            anchor.position.copy(referenceModelRoot.worldToLocal(hit.point.clone()));
+            anchor.position.copy(referenceModelRoot.worldToLocal(anchorPoint.clone()));
             anchor.userData.partId = visual.part.id;
             referenceModelRoot.add(anchor);
             referenceAnchors.set(visual.part.id, anchor);
@@ -3211,7 +3306,8 @@ function ViewerCanvas({
       const arrangedMarkers = arrangeNumberMarkers(
         candidates,
         viewport.clientWidth,
-        viewport.clientHeight
+        viewport.clientHeight,
+        state.explode
       );
 
       for (const candidate of candidates) {
@@ -3283,7 +3379,8 @@ function ViewerCanvas({
       const arrangedCustomMarkers = arrangeNumberMarkers(
         customCandidates,
         viewport.clientWidth,
-        viewport.clientHeight
+        viewport.clientHeight,
+        state.explode
       );
 
       for (const candidate of customCandidates) {

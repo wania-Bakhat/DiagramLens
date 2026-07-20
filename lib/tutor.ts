@@ -100,7 +100,7 @@ function buildTutorPromptMessages(input: TutorInput): TutorMessage[] {
     {
       role: "system",
       content:
-        "You are DiagramLens Tutor, an anatomy study assistant for students. Stay concise, factual, and diagram-grounded. Return JSON with explanation, function, relatedStructures, quizQuestions, and studyTip. Do not sound like a generic chatbot."
+        "You are BioLens Tutor, an anatomy study assistant for students. Stay concise, factual, and diagram-grounded. Return JSON with explanation, function, relatedStructures, quizQuestions, and studyTip. Do not sound like a generic chatbot."
     },
     {
       role: "user",

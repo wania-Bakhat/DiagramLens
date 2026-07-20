@@ -169,70 +169,31 @@ function StepRow({
   );
 }
 
-function buildAtlasPreviewResult(organ: AtlasOrgan): VisionExtractionResult {
-  return buildAtlasResult(organ, `${organ.slug}-atlas-diagram.png`);
+function HeroLens() {
+  return (
+    <motion.div
+      aria-hidden="true"
+      className="biolens-lens pointer-events-none absolute top-1/2 z-20 grid h-[1.15em] w-[1.15em] -translate-y-1/2 place-items-center rounded-full"
+      animate={{ left: ["-4%", "86%", "86%", "-4%"] }}
+      transition={{
+        duration: 11,
+        times: [0, 0.43, 0.57, 1],
+        repeat: Infinity,
+        ease: [0.4, 0, 0.2, 1]
+      }}
+    >
+      <span className="biolens-lens-reflection absolute inset-[12%] rounded-full" />
+      <span className="biolens-lens-scanlines absolute inset-[12%] overflow-hidden rounded-full" />
+      <svg viewBox="0 0 100 100" className="relative h-[63%] w-[63%] text-cyan-50/70" fill="none">
+        <path d="M14 62c16-24 25-32 39-33 11-1 20 7 33 25M16 52c14 0 18 12 29 17 11 5 18-7 38-4M49 22c-3 17 6 26 3 48M30 36c10 8 18 9 30 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="50" cy="50" r="39" stroke="currentColor" strokeOpacity=".55" />
+      </svg>
+    </motion.div>
+  );
 }
 
-const swapAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-function RandomLetterSwap({ text }: { text: string }) {
-  const [displayText, setDisplayText] = useState(text);
-  const frameRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (frameRef.current !== null) {
-        window.clearInterval(frameRef.current);
-      }
-    };
-  }, []);
-
-  const animate = () => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
-
-    if (frameRef.current !== null) {
-      window.clearInterval(frameRef.current);
-    }
-
-    let step = 0;
-    frameRef.current = window.setInterval(() => {
-      const revealed = Math.floor(step / 2);
-      setDisplayText(
-        text
-          .split("")
-          .map((character, index) => {
-            if (character === " " || index < revealed) {
-              return character;
-            }
-            return swapAlphabet[(step * 7 + index * 11) % swapAlphabet.length];
-          })
-          .join("")
-      );
-
-      step += 1;
-      if (step > text.length * 2) {
-        if (frameRef.current !== null) {
-          window.clearInterval(frameRef.current);
-          frameRef.current = null;
-        }
-        setDisplayText(text);
-      }
-    }, 38);
-  };
-
-  return (
-    <span
-      aria-label={text}
-      className="inline-block cursor-default select-none"
-      onFocus={animate}
-      onMouseEnter={animate}
-      tabIndex={0}
-    >
-      <span aria-hidden="true">{displayText}</span>
-    </span>
-  );
+function buildAtlasPreviewResult(organ: AtlasOrgan): VisionExtractionResult {
+  return buildAtlasResult(organ, `${organ.slug}-atlas-diagram.png`);
 }
 
 const medicalCardImageByOrgan: Record<string, string> = {
@@ -416,10 +377,6 @@ export default function Home() {
     () => findAtlasOrgan(selectedAtlasSlug),
     [selectedAtlasSlug]
   );
-  const uploadPreviewOrgan = useMemo(
-    () => (selectedFile ? findAtlasOrgan(selectedFile.name) : null),
-    [selectedFile]
-  );
   const atlasPreviewResult = useMemo(
     () => buildAtlasPreviewResult(selectedAtlas),
     [selectedAtlas]
@@ -429,8 +386,11 @@ export default function Home() {
       return atlasPreviewResult;
     }
 
-    return buildAtlasPreviewResult(uploadPreviewOrgan ?? selectedAtlas);
-  }, [selectedFile, uploadPreviewOrgan, selectedAtlas, atlasPreviewResult]);
+    // Do not guess an organ from its filename while visual analysis is running.
+    // The viewer keeps the current atlas model visible until the API returns the
+    // actual image classification.
+    return buildAtlasPreviewResult(selectedAtlas);
+  }, [selectedFile, selectedAtlas, atlasPreviewResult]);
   const currentResult = useMemo<VisionExtractionResult>(() => {
     if (viewMode === "upload") {
       return analysis ?? uploadPreviewResult;
@@ -494,7 +454,10 @@ export default function Home() {
     setError(null);
     setIsExtracting(true);
     setViewMode("upload");
-    setIsViewerOpen(true);
+    // Keep the existing study closed until the image has been identified. This
+    // prevents a failed upload from opening the previously selected (often
+    // Heart) atlas model and looking like an incorrect classification.
+    setIsViewerOpen(false);
 
     void visionAdapter
       .extract({
@@ -507,7 +470,11 @@ export default function Home() {
         }
 
         setAnalysis(result);
+        setSelectedAtlasSlug(
+          findAtlasOrgan(result.organSlug ?? result.organName).slug
+        );
         setIsExtracting(false);
+        setIsViewerOpen(true);
       })
       .catch((exception) => {
         if (!active) {
@@ -520,6 +487,7 @@ export default function Home() {
             : "Unable to extract anatomy from the uploaded diagram."
         );
         setIsExtracting(false);
+        setIsViewerOpen(false);
       });
 
     return () => {
@@ -602,12 +570,21 @@ export default function Home() {
   }
 
   function handleClear() {
+    if (studyLaunchTimer.current !== null) {
+      window.clearTimeout(studyLaunchTimer.current);
+      studyLaunchTimer.current = null;
+    }
+
     setSelectedFile(null);
     setAnalysis(null);
     setIsExtracting(false);
     setError(null);
     setViewMode("atlas");
     setIsViewerOpen(false);
+    setIsStudyLaunching(false);
+    // An empty value intentionally leaves every atlas card unselected while
+    // findAtlasOrgan still supplies a safe default for the closed workspace.
+    setSelectedAtlasSlug("");
   }
 
   const sourceTitle =
@@ -663,7 +640,7 @@ export default function Home() {
             <BrandMark />
             <div className="leading-tight">
               <p className="text-[0.65rem] uppercase tracking-[0.36em] text-white/[0.45]">
-                DiagramLens
+                BioLens
               </p>
               <p className="text-sm text-white/[0.78]">
                 Anatomy atlas and guided study
@@ -693,37 +670,65 @@ export default function Home() {
         </motion.header>
 
         <motion.section
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08, duration: 0.6, ease: "easeOut" }}
-          className="flex min-h-[72svh] max-w-6xl flex-col justify-center py-16 md:min-h-[78svh] md:py-24"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="relative flex min-h-[74svh] max-w-6xl flex-col justify-center py-16 lg:py-20"
         >
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.5 }} className="space-y-7">
-            <h1 className="font-display text-5xl font-semibold leading-[0.88] tracking-[-0.07em] text-white md:text-7xl xl:text-8xl">
-              <RandomLetterSwap text="DiagramLens" />
-            </h1>
-            <p className="max-w-xl text-base leading-7 text-white/[0.58] md:text-lg">
-              An interactive anatomy atlas for clear, focused study.
+          <div aria-hidden="true" className="biolens-hero-glow absolute -left-28 top-[13%] -z-10 h-80 w-80 rounded-full" />
+          <div aria-hidden="true" className="biolens-medical-grid absolute inset-x-0 top-[7%] -z-10 h-[76%]" />
+          {Array.from({ length: 13 }, (_, index) => (
+            <span
+              aria-hidden="true"
+              key={index}
+              className="biolens-particle absolute -z-10 h-1 w-1 rounded-full bg-cyan-100/70"
+              style={{
+                left: `${7 + ((index * 17) % 86)}%`,
+                top: `${10 + ((index * 23) % 76)}%`,
+                animationDelay: `${index * -0.8}s`,
+                animationDuration: `${6 + (index % 4)}s`
+              }}
+            />
+          ))}
+
+          <motion.div
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ amount: 0.45 }}
+            transition={{ delay: 0.12, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 text-center"
+          >
+            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.34em] text-cyan-100/60">
+              Interactive anatomy intelligence
             </p>
+            <div className="relative mx-auto w-fit max-w-full overflow-visible py-[0.16em] pr-[0.16em]">
+              <h1 aria-label="BioLens" className="biolens-wordmark whitespace-nowrap pr-[0.13em] font-editorial text-7xl leading-[0.92] tracking-[-0.075em] sm:text-8xl md:text-9xl xl:text-[10.5rem]">
+                <span>Bio</span><span className="biolens-wordmark-lens ml-[0.1em] text-[1.05em] italic">Lens</span>
+              </h1>
+              <HeroLens />
+            </div>
+            <p className="mx-auto mt-8 max-w-xl text-base leading-7 text-white/[0.62] md:text-lg">
+              Bring anatomy into focus with precise 3D models, connected labels, and an AI study guide built around what you are seeing.
+            </p>
+            <div className="mt-9 flex flex-wrap justify-center gap-3">
+              <a
+                href="#atlas"
+                className="biolens-primary-button inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-slate-950"
+              >
+                Explore Anatomy
+                <ArrowIcon />
+              </a>
+              <a
+                href="#workspace"
+                className="inline-flex items-center gap-2 rounded-full border border-cyan-100/[0.16] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/[0.88] backdrop-blur transition hover:-translate-y-0.5 hover:border-cyan-200/35 hover:bg-cyan-300/[0.08]"
+              >
+                Upload diagram
+              </a>
+            </div>
           </motion.div>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a
-              href="#atlas"
-              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-glow transition hover:-translate-y-0.5"
-            >
-              Browse atlas
-              <ArrowIcon />
-            </a>
-            <a
-              href="#workspace"
-              className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/[0.85] backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/[0.08]"
-            >
-              Upload diagram
-            </a>
-          </div>
-
-          <div className="mt-14 grid max-w-3xl gap-4 border-t border-white/10 pt-5 sm:grid-cols-3">
+          <div className="mt-14 grid max-w-3xl gap-4 self-center border-t border-white/10 pt-5 sm:grid-cols-3">
             {heroStats.map((stat) => (
               <StatTile key={stat.label} label={stat.label} value={stat.value} />
             ))}
@@ -979,7 +984,7 @@ export default function Home() {
 
         <footer className="mt-16 flex flex-col gap-4 border-t border-white/10 pt-6 text-sm text-white/[0.45] md:flex-row md:items-center md:justify-between">
           <p>
-            DiagramLens combines interactive anatomy models, structured labels,
+            BioLens combines interactive anatomy models, structured labels,
             and guided study notes.
           </p>
           <a
