@@ -16,7 +16,7 @@ body {
   min-height: 100vh;
   color: rgb(244 247 255);
   background:
-    radial-gradient(ellipse at 50% -18%, rgba(148, 163, 184, 0.12), transparent 34%),
+    radial-gradient(ellipse at 50% -18%, rgba(244, 114, 182, 0.13), transparent 34%),
     linear-gradient(180deg, #02050b 0%, #070b12 48%, #02050b 100%);
   font-family: var(--font-body), sans-serif;
 }
@@ -41,7 +41,7 @@ input {
   button:not([disabled]):focus-visible,
   a:focus-visible,
   input:focus-visible {
-    outline: 2px solid rgba(125, 211, 252, 0.7);
+    outline: 2px solid rgba(249, 168, 212, 0.7);
     outline-offset: 3px;
   }
 
@@ -63,11 +63,11 @@ input {
 
 .biolens-wordmark {
   color: transparent;
-  background: linear-gradient(112deg, #dbeafe 4%, #67e8f9 42%, #38bdf8 68%, #e0f2fe 100%);
+  background: linear-gradient(112deg, #fce7f3 4%, #f9a8d4 42%, #f472b6 68%, #fdf2f8 100%);
   background-size: 180% 100%;
   -webkit-background-clip: text;
   background-clip: text;
-  filter: drop-shadow(0 0 24px rgba(56, 189, 248, 0.23));
+  filter: drop-shadow(0 0 24px rgba(244, 114, 182, 0.25));
   animation: biolens-title-shimmer 9s ease-in-out infinite;
   text-shadow: 0 16px 46px rgba(2, 6, 23, 0.34);
 }
@@ -77,21 +77,21 @@ input {
 }
 
 .biolens-lens {
-  border: 1px solid rgba(186, 230, 253, 0.62);
+  border: 1px solid rgba(251, 207, 232, 0.62);
   background:
     radial-gradient(circle at 31% 28%, rgba(255, 255, 255, 0.72), transparent 16%),
-    linear-gradient(135deg, rgba(224, 242, 254, 0.35), rgba(14, 116, 144, 0.2));
+    linear-gradient(135deg, rgba(253, 242, 248, 0.35), rgba(190, 24, 93, 0.2));
   box-shadow:
-    0 0 0 5px rgba(14, 165, 233, 0.08),
-    0 0 28px rgba(34, 211, 238, 0.48),
-    inset 0 0 20px rgba(224, 242, 254, 0.26);
+    0 0 0 5px rgba(236, 72, 153, 0.08),
+    0 0 28px rgba(244, 114, 182, 0.48),
+    inset 0 0 20px rgba(253, 242, 248, 0.26);
   backdrop-filter: brightness(1.35) saturate(1.24) blur(1px);
 }
 
 .biolens-lens::before {
   position: absolute;
   inset: -8px;
-  border: 1px solid rgba(103, 232, 249, 0.22);
+  border: 1px solid rgba(249, 168, 212, 0.22);
   border-radius: inherit;
   content: "";
   opacity: 0.8;
@@ -106,8 +106,8 @@ input {
 .biolens-lens-scanlines {
   background: repeating-linear-gradient(
     180deg,
-    rgba(224, 242, 254, 0.24) 0,
-    rgba(224, 242, 254, 0.24) 1px,
+    rgba(253, 242, 248, 0.24) 0,
+    rgba(253, 242, 248, 0.24) 1px,
     transparent 1px,
     transparent 5px
   );
@@ -115,7 +115,7 @@ input {
 }
 
 .biolens-hero-glow {
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.22), transparent 68%);
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.22), transparent 68%);
   filter: blur(12px);
   animation: biolens-ambient 9s ease-in-out infinite alternate;
 }
@@ -123,26 +123,26 @@ input {
 .biolens-medical-grid {
   opacity: 0.28;
   background-image:
-    linear-gradient(rgba(125, 211, 252, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(125, 211, 252, 0.1) 1px, transparent 1px);
+    linear-gradient(rgba(249, 168, 212, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(249, 168, 212, 0.1) 1px, transparent 1px);
   background-position: center;
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 42% 46%, black 8%, transparent 70%);
 }
 
 .biolens-particle {
-  box-shadow: 0 0 12px rgba(125, 211, 252, 0.85);
+  box-shadow: 0 0 12px rgba(249, 168, 212, 0.85);
   animation: biolens-particle-float ease-in-out infinite;
 }
 
 .biolens-primary-button {
-  background: linear-gradient(110deg, #e0f2fe, #67e8f9 52%, #bae6fd);
-  box-shadow: 0 10px 34px rgba(14, 165, 233, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  background: linear-gradient(110deg, #fdf2f8, #f9a8d4 52%, #fbcfe8);
+  box-shadow: 0 10px 34px rgba(236, 72, 153, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.68);
   transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .biolens-primary-button:hover {
-  box-shadow: 0 16px 42px rgba(34, 211, 238, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: 0 16px 42px rgba(244, 114, 182, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   transform: translateY(-2px) scale(1.015);
 }
 
@@ -186,4 +186,3 @@ input {
     text-wrap: balance;
   }
 }
-

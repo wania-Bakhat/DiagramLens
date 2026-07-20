@@ -31,6 +31,7 @@ function configuredProvider() {
   const openAIKey = process.env.OPENAI_API_KEY?.trim();
   if (openAIKey) {
     return {
+      kind: "openai" as const,
       apiKey: openAIKey,
       endpoint: "https://api.openai.com/v1/chat/completions",
       model: process.env.OPENAI_VISION_MODEL?.trim() || "gpt-5.6"
@@ -40,11 +41,12 @@ function configuredProvider() {
   const groqKey = process.env.GROQ_API_KEY?.trim();
   if (groqKey) {
     return {
+      kind: "groq" as const,
       apiKey: groqKey,
       endpoint: "https://api.groq.com/openai/v1/chat/completions",
       model:
         process.env.GROQ_VISION_MODEL?.trim() ||
-        "meta-llama/llama-4-scout-17b-16e-instruct"
+        "qwen/qwen3.6-27b"
     };
   }
 
@@ -129,6 +131,12 @@ export async function POST(request: Request) {
           }
         ],
         response_format: { type: "json_object" },
+        // Qwen enables reasoning by default. Groq requires hidden or parsed
+        // reasoning with JSON mode; disabling it gives us the compact JSON
+        // response this classifier needs.
+        ...(provider.kind === "groq"
+          ? { reasoning_effort: "none", reasoning_format: "hidden" }
+          : {}),
         temperature: 0.1,
         max_completion_tokens: 160
       }),
@@ -143,11 +151,31 @@ export async function POST(request: Request) {
   }
 
   if (!providerResponse.ok) {
+    const providerError = (await providerResponse.json().catch(() => null)) as {
+      error?: { message?: unknown };
+    } | null;
+    const providerMessage = providerError?.error?.message;
+
     if (providerResponse.status === 401 || providerResponse.status === 403) {
       return NextResponse.json(
         {
           error:
             "Image recognition could not authenticate the configured API key. Update GROQ_API_KEY or add OPENAI_API_KEY, then restart the app."
+        },
+        { status: 503 }
+      );
+    }
+
+    if (
+      provider.kind === "groq" &&
+      (providerResponse.status === 400 || providerResponse.status === 404) &&
+      typeof providerMessage === "string" &&
+      /(deprecat|decommission|model.*(?:not found|unavailable)|invalid model)/i.test(providerMessage)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The configured Groq vision model is unavailable. Set GROQ_VISION_MODEL=qwen/qwen3.6-27b in .env.local, then restart the app."
         },
         { status: 503 }
       );

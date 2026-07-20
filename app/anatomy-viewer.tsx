@@ -113,7 +113,7 @@ type ViewerCanvasProps = {
 const palette = [
   "#fb7185",
   "#f97316",
-  "#38bdf8",
+  "#f472b6",
   "#34d399",
   "#c084fc",
   "#facc15"
@@ -1450,7 +1450,7 @@ function renderTutorInline(text: string): ReactNode[] {
         (segment.startsWith("__") && segment.endsWith("__"))
       ) {
         return (
-          <strong key={index} className="font-semibold text-cyan-50">
+          <strong key={index} className="font-semibold text-pink-50">
             {segment.slice(2, -2)}
           </strong>
         );
@@ -1460,7 +1460,7 @@ function renderTutorInline(text: string): ReactNode[] {
         return (
           <code
             key={index}
-            className="rounded bg-slate-950/75 px-1.5 py-0.5 font-mono text-[0.86em] text-cyan-100"
+            className="rounded bg-slate-950/75 px-1.5 py-0.5 font-mono text-[0.86em] text-pink-100"
           >
             {segment.slice(1, -1)}
           </code>
@@ -1504,7 +1504,7 @@ function TutorMarkdown({ content }: { content: string }) {
           ? "pt-1 text-lg font-semibold tracking-[-0.02em] text-white"
           : level === 2
             ? "pt-2 text-base font-semibold text-white"
-            : "pt-2 text-sm font-semibold text-cyan-50";
+            : "pt-2 text-sm font-semibold text-pink-50";
       const Heading = (level === 1 ? "h2" : level === 2 ? "h3" : "h4") as
         | "h2"
         | "h3"
@@ -1553,7 +1553,7 @@ function TutorMarkdown({ content }: { content: string }) {
       blocks.push(
         <List
           key={`list-${lineIndex}-${ordered ? "ordered" : "bullet"}`}
-          className={`space-y-1.5 pl-5 leading-7 text-white/80 marker:text-cyan-200/75 ${
+          className={`space-y-1.5 pl-5 leading-7 text-white/80 marker:text-pink-200/75 ${
             ordered ? "list-decimal" : "list-disc"
           }`}
         >
@@ -1658,10 +1658,10 @@ function TutorChatPanel({
         <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-100/65">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-pink-100/65">
                 Groq AI Tutor
               </p>
-              <span className="rounded-full border border-cyan-300/20 bg-cyan-500/[0.08] px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-cyan-100/75">
+              <span className="rounded-full border border-pink-300/20 bg-pink-500/[0.08] px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-pink-100/75">
                 Diagram-aware
               </span>
             </div>
@@ -1688,7 +1688,7 @@ function TutorChatPanel({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="rounded-full border border-cyan-300/25 bg-cyan-500/[0.08] px-3 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-500/[0.16]"
+              className="rounded-full border border-pink-300/25 bg-pink-500/[0.08] px-3 py-2 text-xs font-semibold text-pink-50 transition hover:bg-pink-500/[0.16]"
             >
               {fullscreen ? "Minimize" : "Full screen"}
             </button>
@@ -1717,7 +1717,7 @@ function TutorChatPanel({
                     key={message.id}
                     className={`rounded-2xl border px-4 py-3.5 text-[0.95rem] leading-7 shadow-[0_12px_30px_rgba(2,6,23,0.16)] ${
                       message.role === "user"
-                        ? "ml-auto max-w-[88%] border-cyan-300/30 bg-cyan-500/10 text-cyan-50"
+                        ? "ml-auto max-w-[88%] border-pink-300/30 bg-pink-500/10 text-pink-50"
                         : "mr-auto max-w-[96%] border-white/10 bg-white/[0.045] text-white/85"
                     }`}
                   >
@@ -1746,7 +1746,7 @@ function TutorChatPanel({
                         type="button"
                         onClick={() => onAskQuestion(question)}
                         disabled={loading}
-                        className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-3 text-left text-sm leading-6 text-white/80 transition hover:border-cyan-300/25 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-3 text-left text-sm leading-6 text-white/80 transition hover:border-pink-300/25 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {question}
                       </button>
@@ -1765,9 +1765,9 @@ function TutorChatPanel({
                 <div className="mr-auto max-w-[96%] rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3.5" aria-live="polite">
                   <p className="text-[0.63rem] font-semibold uppercase tracking-[0.22em] text-white/40">Tutor</p>
                   <div className="mt-3 flex gap-1.5" aria-label="Tutor is thinking">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70 [animation-delay:-0.2s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70 [animation-delay:-0.1s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-100/70" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pink-100/70 [animation-delay:-0.2s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pink-100/70 [animation-delay:-0.1s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pink-100/70" />
                   </div>
                 </div>
               ) : null}
@@ -1799,7 +1799,7 @@ function TutorChatPanel({
                 maxLength={1_200}
                 rows={fullscreen ? 3 : 2}
                 placeholder={`Ask about ${selectedPartName ?? organName}...`}
-                className="w-full resize-none rounded-2xl border border-white/10 bg-slate-950/55 px-3.5 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/50 focus:ring-2 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full resize-none rounded-2xl border border-white/10 bg-slate-950/55 px-3.5 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/35 focus:border-pink-300/50 focus:ring-2 focus:ring-pink-300/10 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="mt-2 flex items-center justify-between gap-3">
                 <p className="text-[0.65rem] leading-4 text-white/35">
@@ -1808,7 +1808,7 @@ function TutorChatPanel({
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-pink-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? "Thinking…" : "Send"}
                 </button>
@@ -2159,8 +2159,8 @@ function AnatomyViewer({
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {selectedPart && tutorContent ? (
               <div className="space-y-4">
-                <section className="rounded-2xl border border-cyan-300/20 bg-cyan-500/[0.07] p-4">
-                  <p className="text-xs font-medium text-cyan-100/65">Selected structure</p>
+                <section className="rounded-2xl border border-pink-300/20 bg-pink-500/[0.07] p-4">
+                  <p className="text-xs font-medium text-pink-100/65">Selected structure</p>
                   <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-white">
                     {selectedPart.name}
                   </h2>
@@ -2189,7 +2189,7 @@ function AnatomyViewer({
                           key={`${relation.id}-${relation.relation}`}
                           type="button"
                           onClick={() => handleSelectPart(relation.id)}
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left transition hover:border-cyan-300/25 hover:bg-white/[0.06]"
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2 text-left transition hover:border-pink-300/25 hover:bg-white/[0.06]"
                         >
                           <span className="block text-sm font-medium text-white">{relation.name}</span>
                           <span className="mt-1 block text-xs leading-5 text-white/45">{relation.relation}</span>
@@ -2208,7 +2208,7 @@ function AnatomyViewer({
               </div>
             ) : (
               <div className="flex min-h-full flex-col justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-5 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-500/10 text-lg text-cyan-100">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-pink-300/20 bg-pink-500/10 text-lg text-pink-100">
                   +
                 </div>
                 <h2 className="mt-4 text-lg font-semibold text-white">Select a structure</h2>
@@ -2226,7 +2226,7 @@ function AnatomyViewer({
                 setIsTutorFullscreen(false);
                 setIsTutorOpen(true);
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-pink-50"
             >
               Ask AI Tutor
             </button>
@@ -2270,7 +2270,7 @@ function AnatomyViewer({
                   }
                 }}
                 placeholder="Search parts"
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/45"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-pink-300/45"
               />
             </label>
             <button
@@ -2279,7 +2279,7 @@ function AnatomyViewer({
               aria-pressed={explode}
               title="Moves numbered markers outward while keeping their connector on the exact anatomy point."
               className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${
-                explode ? "border-cyan-300/35 bg-cyan-500/15 text-cyan-50" : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/[0.08]"
+                explode ? "border-pink-300/35 bg-pink-500/15 text-pink-50" : "border-white/10 bg-white/[0.04] text-white/75 hover:bg-white/[0.08]"
               }`}
             >
               Spread labels
@@ -2395,7 +2395,7 @@ function AnatomyViewer({
               <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[0.65rem] uppercase tracking-[0.24em] text-emerald-100">
                 {formatAccuracy(result.confidence)}
               </span>
-              <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[0.65rem] uppercase tracking-[0.24em] text-cyan-100">
+              <span className="rounded-full border border-pink-400/20 bg-pink-500/10 px-3 py-1 text-[0.65rem] uppercase tracking-[0.24em] text-pink-100">
                 {result.parts.length} parts
               </span>
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.65rem] uppercase tracking-[0.24em] text-white/65">
@@ -2423,7 +2423,7 @@ function AnatomyViewer({
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search parts, functions, or relationships"
-                className="w-full rounded-full border border-white/10 bg-slate-950/60 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/40 focus:bg-slate-950/80"
+                className="w-full rounded-full border border-white/10 bg-slate-950/60 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-pink-300/40 focus:bg-slate-950/80"
               />
             </label>
 
@@ -2435,7 +2435,7 @@ function AnatomyViewer({
                 title="Moves numbered markers outward while keeping their connector on the exact anatomy point."
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 ${
                   explode
-                    ? "border-cyan-300/40 bg-cyan-500/15 text-white"
+                    ? "border-pink-300/40 bg-pink-500/15 text-white"
                     : "border-white/10 bg-white/[0.04] text-white/80 hover:bg-white/[0.08]"
                 }`}
               >
@@ -2661,7 +2661,7 @@ function AnatomyViewer({
                           key={part.id}
                           className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition ${
                             active
-                              ? "border-cyan-300/30 bg-cyan-500/12"
+                              ? "border-pink-300/30 bg-pink-500/12"
                               : "border-white/10 bg-white/[0.03]"
                           }`}
                         >
@@ -3625,25 +3625,25 @@ function ViewerCanvas({
         }}
         className={`absolute right-4 top-16 z-20 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] backdrop-blur transition ${
           isLabelEditorOpen
-            ? "border-cyan-200/60 bg-cyan-400/16 text-cyan-50"
-            : "border-cyan-300/25 bg-slate-950/78 text-cyan-50 hover:border-cyan-200/55 hover:bg-slate-900"
+            ? "border-pink-200/60 bg-pink-400/16 text-pink-50"
+            : "border-pink-300/25 bg-slate-950/78 text-pink-50 hover:border-pink-200/55 hover:bg-slate-900"
         }`}
       >
         {isLabelEditorOpen ? "Done editing" : "Edit labels"}
       </button>
 
       {isLabelEditorOpen ? (
-        <section className="absolute right-4 top-28 z-20 w-[min(19rem,90vw)] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/95 p-3 shadow-[0_20px_54px_rgba(2,6,23,0.5)] backdrop-blur-xl">
+        <section className="absolute right-4 top-28 z-20 w-[min(19rem,90vw)] overflow-hidden rounded-2xl border border-pink-300/20 bg-slate-950/95 p-3 shadow-[0_20px_54px_rgba(2,6,23,0.5)] backdrop-blur-xl">
           <div className="flex items-start justify-between gap-3 px-1 py-1">
             <div>
-              <p className="text-[0.63rem] font-semibold uppercase tracking-[0.2em] text-cyan-100/60">
+              <p className="text-[0.63rem] font-semibold uppercase tracking-[0.2em] text-pink-100/60">
                 Edit labels
               </p>
               <p className="mt-1 text-sm font-semibold text-white">
                 Place your own anatomical markers
               </p>
             </div>
-            <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-cyan-100/80">
+            <span className="rounded-full border border-pink-300/20 bg-pink-400/10 px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-pink-100/80">
               {customLabels.length} saved
             </span>
           </div>
@@ -3671,7 +3671,7 @@ function ViewerCanvas({
               type="button"
               onClick={startAddingCustomLabel}
               disabled={isAddingCustomLabel}
-              className="rounded-xl bg-cyan-200 px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-100 disabled:cursor-default disabled:opacity-70"
+              className="rounded-xl bg-pink-200 px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-pink-100 disabled:cursor-default disabled:opacity-70"
             >
               {isAddingCustomLabel ? "Click model…" : "Add label"}
             </button>
@@ -3686,7 +3686,7 @@ function ViewerCanvas({
           </div>
 
           {isAddingCustomLabel ? (
-            <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/[0.08] px-3 py-2.5 text-xs leading-5 text-cyan-50/85">
+            <div className="mt-3 rounded-xl border border-pink-300/20 bg-pink-500/[0.08] px-3 py-2.5 text-xs leading-5 text-pink-50/85">
               Click the exact anatomical point you want to label. Dragging still orbits the model and will not place a marker.
             </div>
           ) : null}
@@ -3704,7 +3704,7 @@ function ViewerCanvas({
                   key={label.id}
                   className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-2.5 py-2"
                 >
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-cyan-300/35 text-[0.58rem] font-bold text-cyan-50">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-pink-300/35 text-[0.58rem] font-bold text-pink-50">
                     {index + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/80">
@@ -3732,9 +3732,9 @@ function ViewerCanvas({
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]">
           <form
             onSubmit={saveCustomLabel}
-            className="w-full max-w-sm rounded-[1.5rem] border border-cyan-300/30 bg-slate-950/95 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.64)]"
+            className="w-full max-w-sm rounded-[1.5rem] border border-pink-300/30 bg-slate-950/95 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.64)]"
           >
-            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-cyan-100/65">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-pink-100/65">
               New custom label
             </p>
             <h3 className="mt-2 text-lg font-semibold text-white">Name this point</h3>
@@ -3752,7 +3752,7 @@ function ViewerCanvas({
                 }}
                 placeholder="e.g. Aorta"
                 maxLength={80}
-                className="w-full rounded-xl border border-white/15 bg-white/[0.06] px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-300/55"
+                className="w-full rounded-xl border border-white/15 bg-white/[0.06] px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-pink-300/55"
               />
             </label>
             {labelEditorError ? (
@@ -3768,7 +3768,7 @@ function ViewerCanvas({
               </button>
               <button
                 type="submit"
-                className="rounded-xl bg-cyan-200 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-100"
+                className="rounded-xl bg-pink-200 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-pink-100"
               >
                 Save label
               </button>
@@ -3781,10 +3781,10 @@ function ViewerCanvas({
         type="button"
         aria-expanded={showStructureList}
         onClick={() => setShowStructureList((current) => !current)}
-        className="absolute left-4 top-16 z-20 inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-slate-950/78 px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-cyan-50 backdrop-blur transition hover:border-cyan-200/55 hover:bg-slate-900"
+        className="absolute left-4 top-16 z-20 inline-flex items-center gap-2 rounded-full border border-pink-300/25 bg-slate-950/78 px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-pink-50 backdrop-blur transition hover:border-pink-200/55 hover:bg-slate-900"
       >
         {isUsingCustomLabels ? "My labels" : "Structures"}
-        <span className="rounded-full bg-cyan-300/12 px-1.5 py-0.5 text-[0.58rem] text-cyan-100/80">
+        <span className="rounded-full bg-pink-300/12 px-1.5 py-0.5 text-[0.58rem] text-pink-100/80">
           {isUsingCustomLabels ? customLabels.length : visibleLabels.length}
         </span>
       </button>
@@ -3832,11 +3832,11 @@ function ViewerCanvas({
                   }}
                   className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
                     selected
-                      ? "bg-cyan-400/14 text-white"
+                      ? "bg-pink-400/14 text-white"
                       : "text-white/70 hover:bg-white/[0.06] hover:text-white"
                   }`}
                 >
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-cyan-300/35 text-[0.58rem] font-bold text-cyan-50">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-pink-300/35 text-[0.58rem] font-bold text-pink-50">
                     {index + 1}
                   </span>
                   <span className="truncate">{label.name}</span>
@@ -3856,7 +3856,7 @@ function ViewerCanvas({
                   }}
                   className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
                     selected
-                      ? "bg-cyan-400/14 text-white"
+                      ? "bg-pink-400/14 text-white"
                       : "text-white/70 hover:bg-white/[0.06] hover:text-white"
                   }`}
                 >
@@ -3873,9 +3873,9 @@ function ViewerCanvas({
 
       {referenceModelState === "loading" && !isLoading ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <div className="rounded-[1.6rem] border border-cyan-300/20 bg-slate-950/75 px-6 py-5 text-center shadow-[0_18px_54px_rgba(2,6,23,0.44)] backdrop-blur-xl">
-            <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-cyan-200/20 border-t-cyan-200" />
-            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.26em] text-cyan-50">
+          <div className="rounded-[1.6rem] border border-pink-300/20 bg-slate-950/75 px-6 py-5 text-center shadow-[0_18px_54px_rgba(2,6,23,0.44)] backdrop-blur-xl">
+            <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-pink-200/20 border-t-pink-200" />
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.26em] text-pink-50">
               Loading reference anatomy
             </p>
             <p className="mt-2 max-w-56 text-sm leading-6 text-white/55">
@@ -3939,12 +3939,12 @@ function ViewerCanvas({
                   y1={layout.y}
                   x2={layout.markerX}
                   y2={layout.markerY}
-                  stroke="#67e8f9"
+                  stroke="#f9a8d4"
                   strokeWidth="1"
                   strokeLinecap="round"
                   opacity="0.9"
                 />
-                <circle cx={layout.x} cy={layout.y} r="2" fill="#67e8f9" />
+                <circle cx={layout.x} cy={layout.y} r="2" fill="#f9a8d4" />
               </g>
             );
           }) : null}
@@ -3968,9 +3968,9 @@ function ViewerCanvas({
                 type="button"
                 onClick={() => onSelectPart(part.id)}
                 aria-label={`${number}. ${part.name}`}
-                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/92 text-[0.58rem] font-bold tabular-nums text-white shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 hover:bg-slate-900 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/92 text-[0.58rem] font-bold tabular-nums text-white shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 hover:bg-slate-900 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
                   selected
-                    ? "border-cyan-100 bg-cyan-400/20"
+                    ? "border-pink-100 bg-pink-400/20"
                     : "border-white/60"
                 }`}
                 style={{
@@ -4014,18 +4014,18 @@ function ViewerCanvas({
                   }
                 }}
                 aria-label={`Custom label ${number}. ${label.name}`}
-                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/95 text-[0.58rem] font-bold tabular-nums text-cyan-50 shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                className={`group motion-label pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-slate-950/95 text-[0.58rem] font-bold tabular-nums text-pink-50 shadow-[0_4px_12px_rgba(2,6,23,0.46)] backdrop-blur transition hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
                   isDraft
                     ? "border-amber-200 border-dashed text-amber-50"
                     : selected
-                      ? "border-cyan-100 bg-cyan-400/25"
-                      : "border-cyan-300/90"
+                      ? "border-pink-100 bg-pink-400/25"
+                      : "border-pink-300/90"
                 }`}
                 style={{ left: layout.markerX, top: layout.markerY }}
               >
                 {number}
-                <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-[min(15rem,calc(100vw_-_2rem))] -translate-x-1/2 rounded-lg border border-cyan-300/20 bg-slate-950/95 px-2.5 py-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-cyan-50 opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.46)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                  <span className="mr-1.5 text-cyan-100/45">{number}.</span>
+                <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-[min(15rem,calc(100vw_-_2rem))] -translate-x-1/2 rounded-lg border border-pink-300/20 bg-slate-950/95 px-2.5 py-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-pink-50 opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.46)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span className="mr-1.5 text-pink-100/45">{number}.</span>
                   {isDraft ? "Name this point" : label.name}
                 </span>
               </button>
@@ -4035,7 +4035,7 @@ function ViewerCanvas({
       </div>
 
       {showGeneratedLabels && selectedLabelIsBehind && selectedPart ? (
-        <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-cyan-300/20 bg-slate-950/80 px-4 py-2 text-center text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-cyan-50/80 backdrop-blur">
+        <div className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full border border-pink-300/20 bg-slate-950/80 px-4 py-2 text-center text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-pink-50/80 backdrop-blur">
           Rotate to reveal {selectedPart.name}
         </div>
       ) : null}

@@ -49,8 +49,8 @@ function BrandMark() {
       <defs>
         <linearGradient id="brand-mark-gradient" x1="8" y1="6" x2="32" y2="34">
           <stop offset="0%" stopColor="#fda4af" />
-          <stop offset="52%" stopColor="#38bdf8" />
-          <stop offset="100%" stopColor="#34d399" />
+          <stop offset="52%" stopColor="#f472b6" />
+          <stop offset="100%" stopColor="#f9a8d4" />
         </linearGradient>
       </defs>
       <rect
@@ -184,7 +184,7 @@ function HeroLens() {
     >
       <span className="biolens-lens-reflection absolute inset-[12%] rounded-full" />
       <span className="biolens-lens-scanlines absolute inset-[12%] overflow-hidden rounded-full" />
-      <svg viewBox="0 0 100 100" className="relative h-[63%] w-[63%] text-cyan-50/70" fill="none">
+      <svg viewBox="0 0 100 100" className="relative h-[63%] w-[63%] text-pink-50/70" fill="none">
         <path d="M14 62c16-24 25-32 39-33 11-1 20 7 33 25M16 52c14 0 18 12 29 17 11 5 18-7 38-4M49 22c-3 17 6 26 3 48M30 36c10 8 18 9 30 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         <circle cx="50" cy="50" r="39" stroke="currentColor" strokeOpacity=".55" />
       </svg>
@@ -681,7 +681,7 @@ export default function Home() {
             <span
               aria-hidden="true"
               key={index}
-              className="biolens-particle absolute -z-10 h-1 w-1 rounded-full bg-cyan-100/70"
+              className="biolens-particle absolute -z-10 h-1 w-1 rounded-full bg-pink-100/70"
               style={{
                 left: `${7 + ((index * 17) % 86)}%`,
                 top: `${10 + ((index * 23) % 76)}%`,
@@ -699,7 +699,7 @@ export default function Home() {
             transition={{ delay: 0.12, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 text-center"
           >
-            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.34em] text-cyan-100/60">
+            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.34em] text-pink-100/60">
               Interactive anatomy intelligence
             </p>
             <div className="relative mx-auto w-fit max-w-full overflow-visible py-[0.16em] pr-[0.16em]">
@@ -721,7 +721,7 @@ export default function Home() {
               </a>
               <a
                 href="#workspace"
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-100/[0.16] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/[0.88] backdrop-blur transition hover:-translate-y-0.5 hover:border-cyan-200/35 hover:bg-cyan-300/[0.08]"
+                className="inline-flex items-center gap-2 rounded-full border border-pink-100/[0.16] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/[0.88] backdrop-blur transition hover:-translate-y-0.5 hover:border-pink-200/35 hover:bg-pink-300/[0.08]"
               >
                 Upload diagram
               </a>
@@ -815,7 +815,7 @@ export default function Home() {
                   selected atlas organ in study mode.
                 </p>
               </div>
-              <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs uppercase tracking-[0.24em] text-cyan-100">
+              <span className="rounded-full border border-pink-400/30 bg-pink-500/10 px-3 py-1 text-xs uppercase tracking-[0.24em] text-pink-100">
                 Ready
               </span>
             </div>
@@ -823,7 +823,7 @@ export default function Home() {
             <div
               className={`mt-6 rounded-[1.7rem] border border-dashed p-6 transition ${
                 isDragging
-                  ? "border-cyan-300 bg-cyan-500/[0.08]"
+                  ? "border-pink-300 bg-pink-500/[0.08]"
                   : "border-white/15 bg-slate-950/[0.28]"
               }`}
               onDragOver={(event) => {
@@ -878,7 +878,7 @@ export default function Home() {
                     className={`inline-flex items-center justify-center rounded-full border px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 ${
                       isViewerOpen
                         ? "border-amber-300/30 bg-amber-500/10 text-amber-50 hover:bg-amber-500/15"
-                        : "border-cyan-300/30 bg-cyan-500/10 text-cyan-50 hover:bg-cyan-500/15"
+                        : "border-pink-300/30 bg-pink-500/10 text-pink-50 hover:bg-pink-500/15"
                     }`}
                   >
                     {isViewerOpen ? "Study mode open" : "Open study mode"}
@@ -920,10 +920,10 @@ export default function Home() {
           </div>
 
           <div id="result">
-            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_72%_20%,rgba(56,189,248,0.2),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.94),rgba(4,7,20,0.9))] p-6 shadow-soft">
-              <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full border border-white/10 bg-cyan-300/5 blur-2xl" />
+            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_72%_20%,rgba(244,114,182,0.2),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.94),rgba(4,7,20,0.9))] p-6 shadow-soft">
+              <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full border border-white/10 bg-pink-300/5 blur-2xl" />
               <div className="relative max-w-md">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-100/65">
+                <p className="text-xs uppercase tracking-[0.3em] text-pink-100/65">
                   Ready to explore
                 </p>
                 <h3 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white">
