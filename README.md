@@ -2,6 +2,22 @@
 
 BioLens is an interactive anatomy atlas that turns a medical image into a focused, labelled 3D study experience. Learners can choose a curated organ system or upload a 2D anatomy image, inspect the corresponding realistic GLB model, select labelled structures, and ask a grounded AI tutor about what they are viewing.
 
+## Built with Codex 5.6
+
+BioLens was built iteratively with Codex 5.6 as the development partner behind the product experience.
+
+Codex 5.6 helped us:
+
+- Design and implement the Next.js, TypeScript, Tailwind, and Three.js application architecture.
+- Build the upload-to-atlas workflow, including the server-side vision adapter and structured organ/part data model.
+- Integrate locally supplied GLB anatomy assets with native 3D controls, selection, labels, layer visibility, and explode interactions.
+- Create the grounded AI tutor flow, which scopes each response to the active organ, selected structure, and curated anatomical relationships.
+- Refine the study interface through repeated feedback: improving full-screen study mode, loading states, responsive layouts, model controls, and label behaviour.
+- Debug GLB loading, Git LFS asset handling, and production build issues.
+- Prepare project documentation, attribution details, and deployment readiness.
+
+Codex 5.6 was used to build and iterate on BioLens; it is not presented as a medical diagnostic tool. Runtime image recognition and tutoring remain behind swappable server-side adapters.
+
 ## Why it matters
 
 Static diagrams make spatial anatomy difficult to learn. BioLens keeps the source image, anatomically appropriate 3D model, visible labels, structure details, and follow-up learning prompts in one calm study workflow.
