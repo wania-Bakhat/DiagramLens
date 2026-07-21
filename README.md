@@ -65,4 +65,3 @@ link: (https://bio-lens-five.vercel.app/)
 
 BioLens is prepared for the **Education** track. The project uses Codex throughout product refinement, interaction implementation, API integration, and production verification. An OpenAI vision model is used to turn an uploaded anatomy image into the appropriate interactive 3D study; Codex was used to build and refine the surrounding product experience.
 
-Before submitting, replace the placeholder API configuration with a valid key, record a sub-three-minute narrated demo showing the upload-to-3D flow and AI tutor, add the `/feedback` Codex session ID, and publish the repository with an appropriate license (or share a private repository with the required Devpost reviewers). Confirm that every supplied model, thumbnail, and third-party asset has permission for this use, and that the credits table above is complete before the repo goes public.
