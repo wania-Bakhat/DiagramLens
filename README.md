@@ -48,8 +48,6 @@ Copy `.env.example` to `.env.local` and configure one server-side vision provide
 
 - `GROQ_API_KEY` is supported as a fallback for image recognition and powers the AI tutor.
 
-Never expose either key with a `NEXT_PUBLIC_` prefix.
-
 ## Verification
 
 ```bash
