@@ -46,7 +46,6 @@ Open `http://localhost:3000`.
 
 Copy `.env.example` to `.env.local` and configure one server-side vision provider:
 
-- `OPENAI_API_KEY` for image recognition (the preferred OpenAI Build Week demo configuration).
 - `GROQ_API_KEY` is supported as a fallback for image recognition and powers the AI tutor.
 
 Never expose either key with a `NEXT_PUBLIC_` prefix.
