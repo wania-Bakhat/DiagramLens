@@ -21,7 +21,7 @@ The interactive GLB anatomy assets in `public/models/sketchfab-models/` are down
 Per the CC BY license, every asset below is credited to its original creator with a link back to the source model.
 
 | Asset (`public/models/sketchfab-models/`) | Model | title | Source |
-|---|---|---|
+|---|---|---|---|
 | `skeleton.glb` | Skeleton | https://skfb.ly/CCAH |
 | `heart.glb` | Realistic Human Heart | https://skfb.ly/oyBCT |
 | `realistic_human_lungs.glb` | Realistic Human Lungs | https://skfb.ly/oBDWI |
